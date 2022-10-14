@@ -1,8 +1,8 @@
 # ROOT unpackers for Phase-2 L1 Data Scouting formats
 
-All the tools here read data in `Native64` format and unpack it to [ROOT](https://root.cern.ch) format, either as [TTree](https://root.cern.ch/doc/master/classTTree.html) or [RNTuple](https://root.cern/doc/v626/structROOT_1_1Experimental_1_1RNTuple.html).
+All the tools here read data in **Native64** format and unpack it to [ROOT](https://root.cern.ch) format, either as [TTree](https://root.cern.ch/doc/master/classTTree.html) or [RNTuple](https://root.cern/doc/v626/structROOT_1_1Experimental_1_1RNTuple.html).
 
-For testing a small data file  SingleNeutrino.dump in `Native64` format is available under `data`.
+For testing a small data file  SingleNeutrino.dump in **Native64** format is available under `data`.
 
 The TTree output can be in `combined` format (one list of Puppi objects) or `separate` format (two lists, for charged and neutral Puppi candidates), saved as either `int`s, `float`s or `float24` (which ROOT calls `Float16_t`), either uncompressed or compressed. A basic validation of the different formats can be run with `make run_test_unpack`
 
