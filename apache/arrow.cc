@@ -113,13 +113,118 @@ void run_ipc(std::fstream &fin,
     batch_writer->Close();
 }
 
+template <typename FltType, typename FltArrayType = typename arrow::TypeTraits<FltType>::ArrayType>
+void run_ipc_bulk(std::fstream &fin,
+             unsigned long &entries,
+             unsigned long &nbatches,
+             unsigned long batchsize,
+             std::shared_ptr<arrow::DataType> t_float,
+             std::shared_ptr<arrow::io::FileOutputStream> &output_file,
+             const arrow::ipc::IpcWriteOptions &options) {
+  assert(batchsize != 0);
+  std::vector<uint64_t> header(batchsize), data;
+  std::vector<uint16_t> run(batchsize), bx(batchsize);
+  std::vector<uint32_t> orbit(batchsize);
+  std::vector<uint8_t> npuppi(batchsize);
+
+  //puppi candidate info:
+  std::vector<float> pt, eta, phi, z0, dxy, wpuppi;
+  std::vector<int16_t> pdgid;
+  std::vector<uint8_t> quality;
+  unsigned int guess_cands = 60 * batchsize;
+  //for (auto & v : { pt, eta, phi, y0, dxy, wpuppi}) v.reserve(guess_ncands);
+  //pdgid.reserve(guess_ncands);
+  //quality.reserve(guess_ncands);
+
+  auto f_run = arrow::field("run", arrow::uint16());
+  auto f_orbit = arrow::field("orbit", arrow::uint32());
+  auto f_bx = arrow::field("bx", arrow::uint16());
+
+  auto f_pt = arrow::field("pt", t_float);
+  auto f_eta = arrow::field("eta", t_float);
+  auto f_phi = arrow::field("phi", t_float);
+  auto f_z0 = arrow::field("z0", t_float);
+  auto f_dxy = arrow::field("dxy", t_float);
+  auto f_wpuppi = arrow::field("wpuppi", t_float);
+  auto f_pdgid = arrow::field("pdgid", arrow::int16());
+  auto f_quality = arrow::field("quality", arrow::uint8());
+
+  auto t_puppi = arrow::struct_({f_pt, f_eta, f_phi, f_z0, f_dxy, f_wpuppi, f_pdgid, f_quality});
+  auto t_puppis = arrow::list(t_puppi);
+  auto f_puppi = arrow::field("Puppi", t_puppis);
+
+  auto schema = arrow::schema({f_run, f_orbit, f_bx, f_puppi});
+
+
+  std::shared_ptr<arrow::ipc::RecordBatchWriter> batch_writer;
+  if (output_file)
+    batch_writer = *arrow::ipc::MakeFileWriter(output_file, schema, options);
+
+  unsigned int e = 0;
+  std::vector<int> offsets(1,0);
+  unsigned int npuppitot = 0, capacity = batchsize;
+  data.resize(capacity);
+  while (fin.good()) {
+    readheader(fin, header[e], run[e], bx[e], orbit[e], npuppi[e]);
+    unsigned int lastvalid = offsets.back();
+    offsets.emplace_back(offsets.back()+npuppi[e]);
+    if (unsigned(offsets.back()) >= capacity) {;
+      capacity = std::max<unsigned int>(offsets.back(), 2*capacity);
+      data.resize(capacity);
+    }
+    fin.read(reinterpret_cast<char *>(&data[lastvalid]), npuppi[e]*sizeof(uint64_t));
+    e++; entries++;
+    if (e == batchsize || !fin.good()) {
+      unsigned int nallpuppi = offsets.back();
+      for (std::vector<float> * v : {&pt, &eta, &phi, &dxy, &z0, &wpuppi}) v->resize(nallpuppi);
+      pdgid.resize(nallpuppi); 
+      quality.resize(nallpuppi);
+      for (unsigned int i = 0; i < nallpuppi; ++i)  {
+        readshared(data[i], pt[i], eta[i], phi[i]);
+        if (readpid(data[i], pdgid[i])) {
+            readcharged(data[i], z0[i], dxy[i], quality[i]);
+            wpuppi[i] = 0;
+        } else {
+            readneutral(data[i], wpuppi[i], quality[i]);
+            z0[i] = 0; dxy[i] = 0;
+        }
+      }
+      std::shared_ptr<arrow::Array> a_run(new arrow::Int16Array(e, arrow::Buffer::Wrap(run)));
+      std::shared_ptr<arrow::Array> a_orbit(new arrow::Int32Array(e, arrow::Buffer::Wrap(orbit)));
+      std::shared_ptr<arrow::Array> a_bx(new arrow::Int16Array(e, arrow::Buffer::Wrap(bx)));
+      std::shared_ptr<arrow::Array> a_pt(new FltArrayType(nallpuppi, arrow::Buffer::Wrap(pt)));
+      std::shared_ptr<arrow::Array> a_eta(new FltArrayType(nallpuppi, arrow::Buffer::Wrap(eta)));
+      std::shared_ptr<arrow::Array> a_phi(new FltArrayType(nallpuppi, arrow::Buffer::Wrap(phi)));
+      std::shared_ptr<arrow::Array> a_dxy(new FltArrayType(nallpuppi, arrow::Buffer::Wrap(dxy)));
+      std::shared_ptr<arrow::Array> a_z0(new FltArrayType(nallpuppi, arrow::Buffer::Wrap(z0)));
+      std::shared_ptr<arrow::Array> a_wpuppi(new FltArrayType(nallpuppi, arrow::Buffer::Wrap(wpuppi)));
+      std::shared_ptr<arrow::Array> a_pdgid(new arrow::Int16Array(nallpuppi, arrow::Buffer::Wrap(pdgid)));
+      std::shared_ptr<arrow::Array> a_quality(new arrow::UInt8Array(nallpuppi, arrow::Buffer::Wrap(quality)));
+      std::shared_ptr<arrow::Array> a_flat_puppi(new arrow::StructArray(t_puppi, nallpuppi, {a_pt,a_eta,a_phi,a_z0,a_dxy,a_wpuppi,a_pdgid,a_quality}));
+      std::shared_ptr<arrow::Array> a_puppi(new arrow::ListArray(t_puppis, e, arrow::Buffer::Wrap(offsets), a_flat_puppi));
+      if (output_file) {
+        std::shared_ptr<arrow::RecordBatch> batch =
+            arrow::RecordBatch::Make(schema, e, {a_run, a_orbit, a_bx, a_puppi});
+        batch_writer->WriteRecordBatch(*batch);
+      }
+      e = 0;
+      data.clear();
+      offsets.resize(1);
+      nbatches++;
+    }
+  }
+  if (output_file)
+    batch_writer->Close();
+}
+
 void usage() {
   printf("Usage: example.exe [options] <layout> infile.dump [ outfile.arrow [ compression level ] ]\n");
-  printf("   layout := ipc_float | ipc_float16 \n");
+  printf("   layout := ipc_float | ipc_float16 | ipc_float_bulk \n");
   printf("   compression := lz4 | zstd\n");
   printf("Options:\n");
   printf("  -b, --batchsize N: number of BXs per batch, default is 3564, one orbit at TM1 \n");
-  printf("  -j, --iothreads N: set the capacity of the global I/O thread pool\n");
+  printf("  -j, --cputhreads N: set the capacity of the global CPU thread pool\n");
+  printf("  -J, --iothreads N: set the capacity of the global I/O thread pool\n");
 }
 
 int main(int argc, char **argv) {
@@ -128,14 +233,15 @@ int main(int argc, char **argv) {
     return 1;
   }
   unsigned long batchsize = 3564;  // default is number of BXs in one LHC orbit
-  unsigned int iothreads = -1;
+  unsigned int iothreads = -1, cputhreads = -1;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
                                            {"batchsize", required_argument, nullptr, 'b'},
-                                           {"iothreads", required_argument, nullptr, 'j'},
+                                           {"iothreads", required_argument, nullptr, 'J'},
+                                           {"cputhreads", required_argument, nullptr, 'j'},
                                            {nullptr, 0, nullptr, 0}};
     int option_index = 0;
-    int optc = getopt_long(argc, argv, "hj:b:", long_options, &option_index);
+    int optc = getopt_long(argc, argv, "hj:J:b:", long_options, &option_index);
     if (optc == -1)
       break;
 
@@ -146,9 +252,13 @@ int main(int argc, char **argv) {
       case 'b':
         batchsize = std::atoi(optarg);
         break;
-      case 'j':
+      case 'J':
         iothreads = std::atoi(optarg);
         arrow::io::SetIOThreadPoolCapacity(iothreads);
+        break;
+      case 'j':
+        cputhreads = std::atoi(optarg);
+        arrow::SetCpuThreadPoolCapacity(cputhreads);
         break;
       default:
         usage();
@@ -193,6 +303,8 @@ int main(int argc, char **argv) {
 
   if (layout == "ipc_float") {
     run_ipc<arrow::FloatType>(fin, entries, nbatches, batchsize, arrow::float32(), output_file, ipcWriteOptions);
+  } else if (layout == "ipc_float_bulk") {
+    run_ipc_bulk<arrow::FloatType>(fin, entries, nbatches, batchsize, arrow::float32(), output_file, ipcWriteOptions);
   } else if (layout == "ipc_float16") {
     run_ipc<arrow::HalfFloatType>(fin, entries, nbatches, batchsize, arrow::float16(), output_file, ipcWriteOptions);
   }
