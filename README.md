@@ -12,12 +12,15 @@ This repository contains software clients to receive and process Phase-2 L1 Data
    | bits  | size | meaning |
    |-------|------|---------|
    | 63-62 |   2  |  `10` = valid event header |
-   | 61-56 |   6  | (local) run number |
+   | 61    |   1  | error bit |
+   | 60-56 |   6  | (local) run number |
    | 55-24 |  32  | orbit number |
    | 23-12 |  12  | bunch crossing number (0-3563) |
    | 11-07 |   4  | must be set to `0` |
    | 07-00 |   8  | number of Puppi candidates |
-   
+
+      * An event is identified  _truncated_ if it's header reports a length of 0 candidates, and the error bit is set.
+
 * **Native128**: each event has a 64 bit event header followed by N Puppi candidates (64 bits each), and is padded to a multiple of 128 bits. 
   * An event is identified  _truncated_ if it's header reports a length of 0 candidates, but the following padding word is not zero.
 
@@ -27,6 +30,17 @@ This repository contains software clients to receive and process Phase-2 L1 Data
   * A _truncated_ orbit has only the SlinkRocket header and trailer, and no events inside.
 
 Two small example data files in **DTHBasic** and **DTHBasicOA** formats are available in the `data` directory.
+
+* **DTHBasic256**: each orbit is split in one or more DTH v1p2-256 data blocks. All blocks except the last have fixed size of 8 kB. Each block starts with a 256 bit DTH header (the format is the same as the 128 bit header above plus another 128 bits of zeros, but the size is in units of 256 bits instead of 128 bits). The DTH is followed by events in the **Native64** format as above, and there may be a padding of zeros to make the orbit be a multiple of 256 bits. Note that events can be broken across two DTH data blocks. 
+      * A _truncated_ orbit has only one Orbit header with the error bit set to 1 and size set to zero, i.e. 
+  
+   | bits  | size | meaning |
+   |-------|------|---------|
+   | 63-62 |   2  |  `11` = valid orbit header |
+   | 61    |   1  | error bit |
+   | 60-56 |   6  | (local) run number |
+   | 55-24 |  32  | orbit number |
+   | 23-00 |  24  | size in 64 bit words |
 
  ## Main
 
