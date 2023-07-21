@@ -221,6 +221,18 @@ public:
       throw std::runtime_error(std::to_string(id_)+": Failed reading Event Header, got only " + std::to_string(n) + "/8 bytes.");
     return parsePuppiHeader(out);
   }
+   PuppiHeader readPuppiHeaderSkippingZeros(int sockfd, uint64_t &out) {
+    do {
+      int n = read(sockfd, reinterpret_cast<char *>(&out), 8);
+      if (n == 0) break;
+      if (n != 8)
+        throw std::runtime_error(std::to_string(id_)+": Failed reading Event Header, got only " + std::to_string(n) + "/8 bytes.");
+      if (out != 0)
+        return parsePuppiHeader(out);
+    } while (good(sockfd));
+    out = 0;
+    return PuppiHeader();
+  }
   PuppiHeader readPuppiHeader(uint8_t *&ptr, const uint8_t *end, uint64_t &out) {
     assert(ptr + 8 <= end);
     out = *reinterpret_cast<const uint64_t *>(ptr);
@@ -267,6 +279,14 @@ public:
       printf("Orbit header %016lx, orbit %u (%x), length %u, ok %d\n", out, ret.orbit, ret.orbit, ret.length, int(!ret.err));
     }
     return ret;
+  }
+  uint64_t fillPuppiOrbitHeader(const PuppiOrbitHeader &in) {
+    uint64_t out = 0;
+    out |= in.length & 0xFFFFFF;
+    out |= (uint64_t(in.orbit & 0xFFFFFFFF) << 24);
+    out |= uint64_t(in.err) << 61;
+    out |= uint64_t(0b11) << 62;
+    return out;
   }
   void countEventsAndOrbits(unsigned long orbit, unsigned int bx, bool truncated = false) {
     if (orbit != oldorbit_) {
@@ -355,7 +375,7 @@ protected:
 
 class NativeChecker : public CheckerBase {
 public:
-  NativeChecker(bool padTo128 = true) : CheckerBase(), padTo128_(padTo128) {}
+  NativeChecker(bool padTo128 = true, bool skipZeros = false) : CheckerBase(), padTo128_(padTo128), skipZeros_(skipZeros) {}
   ~NativeChecker() override{};
 
   int run(int in) override {
@@ -364,7 +384,7 @@ public:
     auto tstart = std::chrono::steady_clock::now();
     try {
       while (good(in) && orbits_ <= maxorbits_) {
-        PuppiHeader evh = readPuppiHeader(in, buff64);
+        PuppiHeader evh = skipZeros_ ? readPuppiHeaderSkippingZeros(in, buff64) : readPuppiHeader(in, buff64);
         if (buff64 == 0) break;
         unsigned int n64 = evh.npuppi + 1;
         bool truncated = false;
@@ -375,6 +395,8 @@ public:
             assert(n == 8);
             truncated = (buff64 != 0);
           }
+        } else {
+          truncated = (evh.npuppi == 0) && evh.err;
         }
         puppis_ += evh.npuppi;
         if (!truncated)
@@ -398,7 +420,7 @@ public:
   }
 
 protected:
-  bool padTo128_;
+  bool padTo128_, skipZeros_;
 };
 
 class DTHBasicChecker : public CheckerBase {
@@ -811,6 +833,130 @@ protected:
   bool checkData_, trailZeros_;
 };
 
+class DTHReceive256 : public DTHBasicChecker256 {
+  public:
+    DTHReceive256(unsigned int orbSize_kb, const char *fname, unsigned int prescale, unsigned long maxSize_gb = 4)
+      : DTHBasicChecker256(orbSize_kb),
+        prescale_(prescale),
+        maxSize_(maxSize_gb << 30),
+        fname_(fname),
+        fout_(fname, std::ios_base::binary | std::ios_base::out | std::ios_base::trunc) {}
+
+  ~DTHReceive256() override {}
+
+  int run(int in) override {
+    uint8_t buff256[32];
+    uint64_t buff64;
+    uint8_t *orbit_buff = reinterpret_cast<uint8_t *>(std::aligned_alloc(4096u, orbSize_));
+    unsigned int nprint = 100;
+    auto tstart = std::chrono::steady_clock::now();
+    bool isfirst = true;
+    int toprint = nprint;
+    unsigned long int readBytes = 0, wroteBytes = 0;
+    try {
+      while (good(in) && orbits_ <= maxorbits_ && wroteBytes < maxSize_) {
+        uint8_t *ptr = orbit_buff, *end = orbit_buff + orbSize_;
+        DTH_Header256 dthh = readDTH256(in, buff256, true, false);
+        if (isfirst) {
+          tstart = std::chrono::steady_clock::now();
+          isfirst = false;
+        }
+        uint32_t totlen256 = dthh.size256;
+        assert(ptr + (dthh.size256 << 5) < end);
+        try {
+          dthh.ok = readChunk(in, ptr, dthh.size256);
+          while (dthh.ok && !dthh.end) {
+            dthh = readDTH256(in, buff256, false, false);
+            if (!dthh.ok)
+              break;
+            totlen256 += dthh.size256;
+            assert(ptr + (dthh.size256 << 5) < end);
+            dthh.ok = readChunk(in, ptr, dthh.size256);
+          }
+        } catch(const std::exception &e) {
+          printf("%02u: Exception was raised in reading DTH frame:\n%s\n", id_, e.what());
+          std::fstream dth_debug_dump("dth_debug.dump", std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
+          dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), (totlen256 << 5));
+          buff64 = 0x4441454444414544;
+          dth_debug_dump.write(reinterpret_cast<char *>(&buff64), 8);
+          dth_debug_dump.write(reinterpret_cast<char *>(&buff64), 8);
+          dth_debug_dump.write(reinterpret_cast<char *>(buff256), 32);
+          for (int i = 0; i < 5; ++i) {
+            int n = read(in, reinterpret_cast<char *>(orbit_buff), orbSize_);
+            if (n <= 0) break;
+            dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), n);
+          }
+          printf("Dumped some data in dth_debug.dump\n");
+          throw e;
+        }
+        if (!dthh.ok)
+          break;
+        orbits_++;
+        ptr = orbit_buff;
+        end = ptr + (totlen256 << 5);
+        PuppiOrbitHeader oh ;
+        if (totlen256 <= 1) {
+          truncorbits_++;
+          if (totlen256 == 1) {
+            oh = readPuppiOrbitHeader(ptr, end, buff64);
+          } else {
+            oh.length = 0;
+            oh.orbit = 0;
+            oh.err = true;
+          }
+        } else {
+          PuppiHeader evh = readPuppiHeader(ptr, end, buff64);
+          oh.length = totlen256 << 5;
+          oh.orbit = evh.orbit;
+          oh.err = false;
+        }
+        readBytes += totlen256 << 5;
+        if (orbits_ % prescale_ == 0) {
+          fout_.write(reinterpret_cast<char *>(orbit_buff), totlen256 << 5);
+          wroteBytes += totlen256 << 5;
+        }
+        if (--toprint == 0) {
+          printf("%02u: Read %7u orbits (%7u truncated, %.4f%%), %9.3f GB. Wrote %6.3f GB.\n",
+                 id_,
+                 orbits_.load(),
+                 truncorbits_.load(),
+                 truncorbits_.load() * 100.0 / orbits_.load(),
+                 readBytes / (1024. * 1024. * 1024.),
+                 wroteBytes / (1024. * 1024. * 1024.));
+          nprint = std::min(nprint << 1, 10000u);
+          toprint = nprint;
+        }
+      }
+    } catch (const std::exception &e) {
+      printf("%02u: Terminating an exception was raised:\n%s\n", id_, e.what());
+    }
+    auto tend = std::chrono::steady_clock::now();
+    std::chrono::duration<double> dt = tend - tstart;
+    double readRate = readBytes / 1024.0 / 1024.0 / 1024.0 / dt.count();
+    double wroteRate = wroteBytes / 1024.0 / 1024.0 / 1024.0 / dt.count();
+    printf("%02u: Read %u orbits (%u truncated, %.4f%%), %.3f GB\n",
+           id_,
+           orbits_.load(),
+           truncorbits_.load(),
+           truncorbits_.load() * 100.0 / orbits_.load(),
+           readBytes / (1024. * 1024. * 1024.));
+    printf("%02u: Wrote %.3f GB to %s\n",
+           id_,
+           wroteBytes / (1024. * 1024. * 1024.),
+           fname_.c_str());
+    printf("%02u: Data rate in %.3f GB/s, out %.3f GB/s\n", id_, readRate, wroteRate);
+    printf("\n");
+    std::free(orbit_buff);
+    return 0;
+  }
+
+  protected:
+    unsigned int prescale_;
+    unsigned long int maxSize_;
+    std::string fname_;
+    std::fstream fout_;
+};
+
 int setup_tcp(const char *addr, const char *port, unsigned int port_offs=0) {
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0) {
@@ -982,7 +1128,7 @@ void start_and_run(std::unique_ptr<CheckerBase> && checker,
                    int client,
                    bool keep_running) 
 {
-    printf("Staring in client %d\n", client);
+    printf("Starting in client %d\n", client);
     do {
       int sourcefd = open_source(src, client);
       if (sourcefd < 0) {
@@ -1066,6 +1212,10 @@ int main(int argc, char **argv) {
       std::unique_ptr<CheckerBase> checker;
       if (kind == "Native128") {
         checker.reset(new NativeChecker(/*padTo128=*/true));
+      } else if (kind == "Native64") {
+        checker.reset(new NativeChecker(/*padTo128=*/false));
+      } else if (kind == "Native64SZ") {
+        checker.reset(new NativeChecker(/*padTo128=*/false, /*skipZeros=*/true));
       } else if (kind == "DTHBasic") {
         checker.reset(new DTHBasicChecker());
       } else if (kind == "DTHBasicOA" || kind == "DTHBasicOA-NC" || kind == "DTHBasicOA-NoSR") {
@@ -1079,6 +1229,13 @@ int main(int argc, char **argv) {
         checker.reset(new DTHReceiveOA(orbsize_kb, argv[optind], prescale));
       } else if (kind == "DTHBasic256" || kind == "DTHBasic256-NC") {
         checker.reset(new DTHBasicChecker256(orbsize_kb, kind != "DTHBasic256-NC", zeropad));
+      } else if (kind == "DTHReceive256") {
+        if (nargs != 3 && nargs != 4) {
+          printf("Usage: %s DTHReceive256 ip:port outfile [prescale] \n", argv[0]);
+          return 3;
+        }
+        unsigned int prescale = (nargs == 3) ? 100 : std::atoi(argv[optind+1]);
+        checker.reset(new DTHReceive256(orbsize_kb, argv[optind], prescale));        
       } else if (kind == "TrashData") {
         checker.reset(new TrashData(buffsize_kb));
       } else if (kind == "ReceiveAndStore") {
