@@ -379,6 +379,7 @@ public:
   ~NativeChecker() override{};
 
   int run(int in) override {
+    int ret = 0;
     uint64_t buff64;
     unsigned int nprint = 100;
     auto tstart = std::chrono::steady_clock::now();
@@ -413,10 +414,11 @@ public:
       }
     } catch (const std::exception &e) {
       printf("Terminating an exception was raised:\n%s\n", e.what());
+      ret = 1;
     }
     auto tend = std::chrono::steady_clock::now();
     printDone(tstart, tend);
-    return 0;
+    return ret;
   }
 
 protected:
@@ -429,6 +431,7 @@ public:
   ~DTHBasicChecker() override{};
 
   int run(int in) override {
+    int ret = 0;
     uint8_t buff128[16];
     uint64_t buff64;
     unsigned int nprint = 100;
@@ -456,10 +459,11 @@ public:
       }
     } catch (const std::exception &e) {
       printf("Terminating an exception was raised:\n%s\n", e.what());
+      ret = 1;
     }
     auto tend = std::chrono::steady_clock::now();
     printDone(tstart, tend);
-    return 0;
+    return ret;
   }
 };
 
@@ -488,6 +492,7 @@ public:
   }
 
   int run(int in) override {
+    int ret = 0;
     uint8_t buff128[16];
     uint64_t buff64;
     uint8_t *orbit_buff = reinterpret_cast<uint8_t *>(std::aligned_alloc(4096u, orbSize_));
@@ -589,11 +594,12 @@ public:
       }
     } catch (const std::exception &e) {
       printf("%02u:Terminating an exception was raised:\n%s\n", id_, e.what());
+      ret = 1;
     }
     auto tend = std::chrono::steady_clock::now();
     printDone(tstart, tend);
     std::free(orbit_buff);
-    return 0;
+    return ret;
   }
 
 protected:
@@ -612,6 +618,7 @@ public:
   ~DTHReceiveOA() override {}
 
   int run(int in) override {
+    int ret = 0;
     uint8_t buff128[16];
     uint8_t *orbit_buff = reinterpret_cast<uint8_t *>(std::aligned_alloc(4096u, orbSize_));
     unsigned int nprint = 100;
@@ -662,6 +669,7 @@ public:
       }
     } catch (const std::exception &e) {
       printf("%02u: Terminating an exception was raised:\n%s\n", id_, e.what());
+      ret = 1;
     }
     auto tend = std::chrono::steady_clock::now();
     std::chrono::duration<double> dt = tend - tstart;
@@ -680,7 +688,7 @@ public:
     printf("%02u: Data rate in %.3f GB/s, out %.3f GB/s\n", id_, readRate, wroteRate);
     printf("\n");
     std::free(orbit_buff);
-    return 0;
+    return ret;
   }
 
 protected:
@@ -716,6 +724,7 @@ public:
   }
 
   int run(int in) override {
+    int ret = 0;
     uint8_t buff256[32];
     uint64_t buff64;
     uint8_t *orbit_buff = reinterpret_cast<uint8_t *>(std::aligned_alloc(4096u, orbSize_));
@@ -757,6 +766,7 @@ public:
             dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), n);
           }
           printf("Dumped some data in dth_debug.dump\n");
+          ret = 1;
           throw e;
         }
         if (!dthh.ok)
@@ -821,11 +831,12 @@ public:
       }
     } catch (const std::exception &e) {
       printf("%02u:Terminating an exception was raised:\n%s\n", id_, e.what());
+      ret = 1;
     }
     auto tend = std::chrono::steady_clock::now();
     printDone(tstart, tend);
     std::free(orbit_buff);
-    return 0;
+    return ret;
   }
 
 protected:
@@ -845,6 +856,7 @@ class DTHReceive256 : public DTHBasicChecker256 {
   ~DTHReceive256() override {}
 
   int run(int in) override {
+    int ret = 0;
     uint8_t buff256[32];
     uint64_t buff64;
     uint8_t *orbit_buff = reinterpret_cast<uint8_t *>(std::aligned_alloc(4096u, orbSize_));
@@ -887,6 +899,7 @@ class DTHReceive256 : public DTHBasicChecker256 {
             dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), n);
           }
           printf("Dumped some data in dth_debug.dump\n");
+          ret = 1;
           throw e;
         }
         if (!dthh.ok)
@@ -929,6 +942,7 @@ class DTHReceive256 : public DTHBasicChecker256 {
       }
     } catch (const std::exception &e) {
       printf("%02u: Terminating an exception was raised:\n%s\n", id_, e.what());
+      ret = 1;
     }
     auto tend = std::chrono::steady_clock::now();
     std::chrono::duration<double> dt = tend - tstart;
@@ -947,7 +961,7 @@ class DTHReceive256 : public DTHBasicChecker256 {
     printf("%02u: Data rate in %.3f GB/s, out %.3f GB/s\n", id_, readRate, wroteRate);
     printf("\n");
     std::free(orbit_buff);
-    return 0;
+    return ret;
   }
 
   protected:
@@ -1114,6 +1128,7 @@ int print_usage(const char *self, int retval) {
   printf("   -d, --debug N  : print out the first N events\n");
   printf("   -T, --tmux  T  : runs at TMUX T (default: 6)\n");
   printf("    --orbitmux N  : mux orbits by factor N (default: 1)\n");
+  printf("    --maxorbits N : stop after this number of orbits (default: 10000000)\n");
   printf("   -t, --tslice T : runs tslice t  (default: 0)\n");
   printf("   -B, --buffsize B : uses a read buffer size of B kB  (default: 4)\n");
   printf("   -O  --orbsize  B : uses an orbit buffer size of B kB (default: 2048)\n");
@@ -1126,7 +1141,8 @@ int print_usage(const char *self, int retval) {
 void start_and_run(std::unique_ptr<CheckerBase> && checker,
                    const std::string & src,
                    int client,
-                   bool keep_running) 
+                   bool keep_running,
+                   std::atomic<unsigned int> * errors) 
 {
     printf("Starting in client %d\n", client);
     do {
@@ -1135,7 +1151,8 @@ void start_and_run(std::unique_ptr<CheckerBase> && checker,
         printf("Error in opening source %s for client %d.\n", src.c_str(), client);
         return;
       }
-      checker->run(sourcefd);
+      int ret = checker->run(sourcefd);
+      if (ret) errors->fetch_add(1);
       checker->clear();
     } while (keep_running);
     printf("Done in client %d\n", client);
@@ -1144,6 +1161,7 @@ void start_and_run(std::unique_ptr<CheckerBase> && checker,
 
 int main(int argc, char **argv) {
   int debug = 0, tmux = 6, tmux_slice = 0, orbitmux = 1, buffsize_kb = 4, orbsize_kb = 2048, nclients = 1;
+  unsigned int maxorbits = 10000000;
   bool keep_running = false, zeropad = false;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
@@ -1151,6 +1169,7 @@ int main(int argc, char **argv) {
                                            {"debug", required_argument, nullptr, 'd'},
                                            {"tmux", required_argument, nullptr, 'T'},
                                            {"orbitmux", required_argument, nullptr, 1},
+                                           {"maxorbits", required_argument, nullptr, 2},
                                            {"tslice", required_argument, nullptr, 't'},
                                            {"buffsize", required_argument, nullptr, 'B'},
                                            {"orbsize", required_argument, nullptr, 'O'},
@@ -1183,6 +1202,9 @@ int main(int argc, char **argv) {
       case 1:
         orbitmux = std::atoi(optarg);
         break;
+      case 2:
+        maxorbits = std::atol(optarg);
+        break;
       case 'B':
         buffsize_kb = std::atoi(optarg);
         break;
@@ -1206,7 +1228,8 @@ int main(int argc, char **argv) {
   std::string kind(argv[optind++]);
   std::string src(argv[optind++]);
 
-  int ret;
+  int ret = 0;
+  std::atomic<unsigned int> client_errors = 0;
   std::vector<std::thread> client_threads;
   for (int client = 0; client < nclients; ++client) {
       std::unique_ptr<CheckerBase> checker;
@@ -1249,15 +1272,16 @@ int main(int argc, char **argv) {
         return 3;
       }
       if (orbitmux == 1) {
-        checker->init(tmux, tmux_slice + client, orbitmux);
+        checker->init(tmux, tmux_slice + client, orbitmux, maxorbits);
       } else {
-        checker->init(tmux, tmux_slice, orbitmux);
+        checker->init(tmux, tmux_slice, orbitmux, maxorbits);
         checker->setId(client);
       }
       checker->setDebug(debug);
 
-      client_threads.emplace_back(start_and_run, std::move(checker), src, client, keep_running);
+      client_threads.emplace_back(start_and_run, std::move(checker), src, client, keep_running, &client_errors);
   }
   for (auto & t : client_threads) t.join();
+  if (client_errors > 0) ret = 1;
   return ret;
 }
