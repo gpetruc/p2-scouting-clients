@@ -1,6 +1,6 @@
 CC = c++
 CCFLAGS = --std=c++17 -march=native -W -Wall  -O3
-LIBS = -lstdc++
+LIBS = -lstdc++ -lpthread
 
 .PHONY: clean run_tests
 

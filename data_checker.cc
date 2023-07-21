@@ -41,30 +41,43 @@ public:
   virtual ~CheckerBase(){};
 
   void init(unsigned int tmux, unsigned int firstBx = 0, unsigned int orbitMux = 1, unsigned int maxorbits = 10000000) {
+    maxorbits_ = maxorbits;
+    tmux_ = tmux;
+    firstbx_ = firstBx;
+    orbitMux_ = orbitMux;
+    ndebug_ = 0;
+    id_ = firstbx_;
+    clear();
+  }
+  void clear() {
     events_ = 0;
     orbits_ = 0;
     truncevents_ = 0;
     truncevents_orbit_ = 0;
     truncorbits_ = 0;
-    maxorbits_ = maxorbits;
     puppis_ = 0;
-    tmux_ = tmux;
-    firstbx_ = firstBx;
-    orbitMux_ = orbitMux;
     oldbx_ = std::numeric_limits<unsigned int>::max();
     oldorbit_ = std::numeric_limits<unsigned int>::max();
     oldrecord_ = std::numeric_limits<uint64_t>::max();
-    ndebug_ = 0;
   }
   void setDebug(int ndebug = 5) { ndebug_ = ndebug; }
+  void setId(unsigned int id) { id_ = id; }
 
   static void print128(const uint8_t *start) {
     for (unsigned int i = 0; i < 16; ++i)
       printf("%02x ", unsigned(start[i]));
   }
+  static void print256(const uint8_t *start) {
+    for (unsigned int i = 0; i < 32; ++i)
+      printf("%02x ", unsigned(start[i]));
+  }
 
   struct DTH_Header {
     uint8_t size128;
+    bool ok, start, end;
+  };
+  struct DTH_Header256 {
+    uint8_t size256;
     bool ok, start, end;
   };
 
@@ -95,7 +108,41 @@ public:
       assert(ret.end);
     return ret;
   }
-
+  DTH_Header256 readDTH256(int sockfd, uint8_t out[32], bool checkStart = false, bool checkEnd = false) {
+    int n = read(sockfd, reinterpret_cast<char *>(out), 32);
+    assert(n <= 0 || n == 32);
+    bool ok = (n == 32);
+    return parseDTH256(ok, out, checkStart, checkEnd);
+  }
+  DTH_Header256 parseDTH256(bool ok, const uint8_t out[32], bool checkStart = false, bool checkEnd = false) {
+    DTH_Header256 ret;
+    ret.ok = ok;
+    if (!ret.ok)
+      return ret;
+    ret.start = test_bit<47>(out);
+    ret.end = test_bit<46>(out);
+    ret.size256 = out[48 / 8];
+    if (events_ < ndebug_) {
+      printf("DTH header: start %d, end %d, length256 %u: ", int(ret.start), int(ret.end), unsigned(ret.size256));
+      print256(out);
+      printf("\n");
+    }
+    if (!(out[0] == 0x47 && out[1] == 0x5a)) {
+      printf("Bad DTH256 header, missing magic: start %d, end %d, length256 %u:", int(ret.start), int(ret.end), unsigned(ret.size256));
+      print256(out);
+      printf("\n");
+      throw std::runtime_error(std::to_string(id_)+": Bad DTH256 header, missing magic");
+      ret.start = false;
+      ret.end = false;
+      ret.size256 = 0xff;
+    }
+    if (!(ret.end || (ret.size256 == 0xFF))) throw std::runtime_error(std::to_string(id_)+": Bad DTH256 header, size != 255 but end flag 0");
+    if (checkStart)
+      if (!ret.start) throw std::runtime_error(std::to_string(id_)+": Bad DTH256 header, expecting start bit set");
+    if (checkEnd)
+      if (!ret.end) throw std::runtime_error(std::to_string(id_)+": Bad DTH256 header, expecting end bit set");
+    return ret;
+  }
   uint64_t readSRHeader(int sockfd, uint8_t out[16], bool checkEv = false) {
     int n = read(sockfd, reinterpret_cast<char *>(out), 16);
     assert(n <= 0 || n == 16);
@@ -115,7 +162,7 @@ public:
       printf("\n");
     }
     if (checkEv && oldrecord_ != std::numeric_limits<uint64_t>::max() && evno != oldrecord_ + 1) {
-      throw std::runtime_error("Record number mismatch, found " + std::to_string(evno) + " after " +
+      throw std::runtime_error(std::to_string(id_)+": Record number mismatch, found " + std::to_string(evno) + " after " +
                                std::to_string(oldrecord_));
     }
     oldrecord_ = evno;
@@ -156,6 +203,12 @@ public:
     uint32_t orbit;
     uint16_t bx;
     uint16_t npuppi;
+    bool err;
+  };
+  struct PuppiOrbitHeader {
+    uint32_t orbit;
+    uint32_t length;
+    bool err;
   };
 
   PuppiHeader readPuppiHeader(int sockfd, uint64_t &out) {
@@ -165,7 +218,7 @@ public:
       return PuppiHeader();
     }
     if (n != 8)
-      throw std::runtime_error("Failed reading Event Header, got only " + std::to_string(n) + "/8 bytes.");
+      throw std::runtime_error(std::to_string(id_)+": Failed reading Event Header, got only " + std::to_string(n) + "/8 bytes.");
     return parsePuppiHeader(out);
   }
   PuppiHeader readPuppiHeader(uint8_t *&ptr, const uint8_t *end, uint64_t &out) {
@@ -179,18 +232,46 @@ public:
     ret.orbit = (out >> 24) & 0xFFFFFFFF;
     ret.bx = (out >> 12) & 0xFFF;
     ret.npuppi = out & 0xFFF;
+    ret.err = (out & (1llu<<61));
     if ((out >> 62) != 0b10)
-      throw std::runtime_error("Bad event header found: " + std::to_string(out));
+      throw std::runtime_error(std::to_string(id_)+": Bad event header found: " + std::to_string(out));
     if (events_ < ndebug_) {
-      printf("Event header %016lx, orbit %u (%x), bx %u, npuppi %d\n", out, ret.orbit, ret.orbit, ret.bx, ret.npuppi);
+      printf("Event header %016lx, orbit %u (%x), bx %u, npuppi %d, ok %d\n", out, ret.orbit, ret.orbit, ret.bx, ret.npuppi, int(!ret.err));
     }
     return ret;
   }
-
+  PuppiOrbitHeader readPuppiOrbitHeader(int sockfd, uint64_t &out) {
+    int n = read(sockfd, reinterpret_cast<char *>(&out), 8);
+    if (n == 0) {
+      out = 0;
+      return PuppiOrbitHeader();
+    }
+    if (n != 8)
+      throw std::runtime_error(std::to_string(id_)+": Failed reading Event Header, got only " + std::to_string(n) + "/8 bytes.");
+    return parsePuppiOrbitHeader(out);
+  }
+  PuppiOrbitHeader readPuppiOrbitHeader(uint8_t *&ptr, const uint8_t *end, uint64_t &out) {
+    assert(ptr + 8 <= end);
+    out = *reinterpret_cast<const uint64_t *>(ptr);
+    ptr += 8;
+    return parsePuppiOrbitHeader(out);
+  }
+  PuppiOrbitHeader parsePuppiOrbitHeader(const uint64_t &out) {
+    PuppiOrbitHeader ret;
+    ret.orbit = (out >> 24) & 0xFFFFFFFF;
+    ret.length = out & 0xFFFFFF;
+    ret.err = (out & (1llu<<61));
+    if ((out >> 62) != 0b11)
+      throw std::runtime_error(std::to_string(id_)+": Bad orbit header found: " + std::to_string(out));
+    if (events_ < ndebug_) {
+      printf("Orbit header %016lx, orbit %u (%x), length %u, ok %d\n", out, ret.orbit, ret.orbit, ret.length, int(!ret.err));
+    }
+    return ret;
+  }
   void countEventsAndOrbits(unsigned long orbit, unsigned int bx, bool truncated = false) {
     if (orbit != oldorbit_) {
       if (oldorbit_ != std::numeric_limits<unsigned int>::max() && (orbit != oldorbit_ + orbitMux_)) {
-        throw std::runtime_error("Orbit mismatch: found orbit " + std::to_string(orbit) + " bx " + std::to_string(bx) +
+        throw std::runtime_error(std::to_string(id_)+": Orbit mismatch: found orbit " + std::to_string(orbit) + " bx " + std::to_string(bx) +
                                  " after orbit " + std::to_string(oldorbit_) + " bx " + std::to_string(oldbx_));
       }
       if (truncevents_orbit_ > 0)
@@ -199,13 +280,13 @@ public:
       orbits_++;
       oldorbit_ = orbit;
       if (oldbx_ != std::numeric_limits<unsigned int>::max() && bx != firstbx_) {
-        throw std::runtime_error("BX mismatch: found " + std::to_string(unsigned(bx)) +
+        throw std::runtime_error(std::to_string(id_) + ": BX mismatch: found " + std::to_string(unsigned(bx)) +
                                  " at beginning of orbit, instead of " + std::to_string(firstbx_));
       }
       oldbx_ = bx;
     } else {
       if (oldbx_ != std::numeric_limits<unsigned int>::max() && bx != oldbx_ + tmux_) {
-        throw std::runtime_error("BX mismatch: found " + std::to_string(unsigned(bx)) + " after " +
+        throw std::runtime_error(std::to_string(id_) + ": BX mismatch: found " + std::to_string(unsigned(bx)) + " after " +
                                  std::to_string(oldbx_) + ", expected " + std::to_string(oldbx_ + tmux_));
       }
       oldbx_ = bx;
@@ -225,19 +306,22 @@ public:
     double dt_lhc = orbits_ / orbrate_lhc;
     double datarate = totbytes / 1024.0 / 1024.0 / 1024.0 / dt.count();
     double fillrate = totbytes / 1024.0 / 1024.0 / 1024.0 / dt_lhc;
-    printf("Read %u orbits, %lu events, %lu candidates, %lu bytes\n",
+    printf("%02u: Read %u orbits, %lu events, %lu candidates, %lu bytes\n", 
+           id_,
            orbits_.load(),
            events_.load(),
            puppis_.load(),
            totbytes);
-    printf("Time to read %.2f ms, LHC time %.2f ms (x %.3f)\n", dt.count() * 1000, dt_lhc * 1000, dt_lhc / dt.count());
-    printf("Orbit rate %.3f kHz (TM1 %.3f kHz), event rate %.2f kHz\n",
+    printf("%02u: Time to read %.2f ms, LHC time %.2f ms (x %.3f)\n", id_, dt.count() * 1000, dt_lhc * 1000, dt_lhc / dt.count());
+    printf("%02u: Orbit rate %.3f kHz (TM1 %.3f kHz), event rate %.2f kHz\n",
+           id_,
            orbrate / 1000,
            orbrate_lhc / 1000.,
            evrate / 1000.);
-    printf("Data rate %.3f GB/s, input data rate %.3f GB/s (x %.3f)\n", datarate, fillrate, fillrate / datarate);
+    printf("%02u: Data rate %.3f GB/s, input data rate %.3f GB/s (x %.3f)\n", id_, datarate, fillrate, fillrate / datarate);
     if (truncevents_ || truncorbits_) {
-      printf("Truncated events %lu (%.4f%%), orbits %u (%.4f%%)\n",
+      printf("%02u: Truncated events %lu (%.4f%%), orbits %u (%.4f%%)\n",
+             id_,
              truncevents_.load(),
              (truncevents_ * 100.0 / events_),
              truncorbits_.load(),
@@ -259,7 +343,7 @@ public:
   }
 
 protected:
-  unsigned int firstbx_, tmux_, orbitMux_;
+  unsigned int firstbx_, tmux_, orbitMux_, id_;
   std::atomic<uint64_t> events_, truncevents_;
   std::atomic<uint32_t> truncevents_orbit_;
   std::atomic<uint32_t> orbits_, truncorbits_, maxorbits_;
@@ -359,8 +443,8 @@ public:
 
 class DTHBasicCheckerOA : public CheckerBase {
 public:
-  DTHBasicCheckerOA(unsigned int orbSize_kb, bool checkData = true)
-      : CheckerBase(), orbSize_(orbSize_kb * 1024), checkData_(checkData) {}
+  DTHBasicCheckerOA(unsigned int orbSize_kb, bool checkData = true, bool srHeaders = true)
+      : CheckerBase(), orbSize_(orbSize_kb * 1024), checkData_(checkData), srHeaders_(srHeaders) {}
   ~DTHBasicCheckerOA() override{};
 
   bool readChunk(std::fstream &in, uint8_t *&ptr, unsigned size128) {
@@ -412,7 +496,7 @@ public:
           break;
         if (!checkData_) {
           orbits_++;
-          if (totlen128 == 2)
+          if (totlen128 <= 2)
             truncorbits_++;
           puppis_ += totlen128 * 2;
           if (--toprint == 0) {
@@ -424,19 +508,35 @@ public:
         }
         ptr = orbit_buff;
         end = ptr + (totlen128 << 4);
-        uint64_t orbitno = readSRHeader(ptr, end, false);
-        if (orbitno == 0)
-          break;
-        if (totlen128 == 2) {  // truncated orbit
-          SR_Trailer srt = readSRTrailer(ptr, end);
-          assert(totlen128 == srt.len);
-          assert(oldorbit_ == std::numeric_limits<unsigned int>::max() || srt.orbit == oldorbit_ + 1);
-          oldorbit_ = srt.orbit;
+        uint64_t orbitno = 0, trunclen128, tail8;
+        if (srHeaders_) {
+          orbitno = readSRHeader(ptr, end, false);
+          if (orbitno == 0)
+            break;
+          trunclen128 = 2;
+          tail8 = 16;
+        } else {
+          trunclen128 = 1;
+          tail8 = 0;
+        }
+        if (totlen128 == trunclen128) {  // truncated orbit
+          if (srHeaders_) {
+              SR_Trailer srt = readSRTrailer(ptr, end);
+              assert(totlen128 == srt.len);
+              orbitno = srt.orbit;
+          } else {
+              PuppiHeader evh = readPuppiHeader(ptr, end, buff64);
+              orbitno = evh.orbit;
+              ptr++;
+          }
+          assert(oldorbit_ == std::numeric_limits<unsigned int>::max() || orbitno == oldorbit_ + 1);
+          oldorbit_ = orbitno;
           orbits_ += 1;
           truncorbits_ += 1;
           continue;
-        }
-        while (ptr + 16 < end) {
+        } 
+        
+        while (ptr + tail8 < end) {
           PuppiHeader evh = readPuppiHeader(ptr, end, buff64);
           unsigned int n64 = evh.npuppi + 1;
           n64 += n64 & 1;
@@ -445,25 +545,28 @@ public:
           ptr += (n64 - 1) << 3;
           countEventsAndOrbits(evh.orbit, evh.bx, truncated);
         }
-        SR_Trailer srt = readSRTrailer(ptr, end);
-        assert(totlen128 == srt.len);
-        assert(oldorbit_ == std::numeric_limits<unsigned int>::max() || srt.orbit == oldorbit_);
+        if (srHeaders_) {
+          SR_Trailer srt = readSRTrailer(ptr, end);
+          assert(totlen128 == srt.len);
+          assert(oldorbit_ == std::numeric_limits<unsigned int>::max() || srt.orbit == oldorbit_);
+        }
         if (--toprint == 0) {
           if (truncevents_) {
-            printf("Read %10lu events, %7u orbits. Truncated %8lu events, %7u orbits\n",
+            printf("%02u: Read %10lu events, %7u orbits. Truncated %8lu events, %7u orbits\n",
+                   id_,
                    events_.load(),
                    orbits_.load(),
                    truncevents_.load(),
                    truncorbits_.load());
           } else {
-            printf("Read %10lu events, %7u orbits\n", events_.load(), orbits_.load());
+            printf("%02u:Read %10lu events, %7u orbits\n", id_, events_.load(), orbits_.load());
           }
           nprint = std::min(nprint << 1, 10000u);
           toprint = nprint;
         }
       }
     } catch (const std::exception &e) {
-      printf("Terminating an exception was raised:\n%s\n", e.what());
+      printf("%02u:Terminating an exception was raised:\n%s\n", id_, e.what());
     }
     auto tend = std::chrono::steady_clock::now();
     printDone(tstart, tend);
@@ -473,7 +576,7 @@ public:
 
 protected:
   unsigned int orbSize_;
-  bool checkData_;
+  bool checkData_, srHeaders_;
 };
 
 class DTHReceiveOA : public DTHBasicCheckerOA {
@@ -516,7 +619,7 @@ public:
         if (!dthh.ok)
           break;
         orbits_++;
-        if (totlen128 == 2)
+        if (totlen128 <= 2)
           truncorbits_++;
         readBytes += totlen128 << 4;
         if (orbits_ % prescale_ == 0) {
@@ -524,7 +627,8 @@ public:
           wroteBytes += totlen128 << 4;
         }
         if (--toprint == 0) {
-          printf("Read %7u orbits (%7u truncated, %.4f%%), %9.3f GB. Wrote %6.3f GB.\n",
+          printf("%02u: Read %7u orbits (%7u truncated, %.4f%%), %9.3f GB. Wrote %6.3f GB.\n",
+                 id_,
                  orbits_.load(),
                  truncorbits_.load(),
                  truncorbits_.load() * 100.0 / orbits_.load(),
@@ -535,21 +639,23 @@ public:
         }
       }
     } catch (const std::exception &e) {
-      printf("Terminating an exception was raised:\n%s\n", e.what());
+      printf("%02u: Terminating an exception was raised:\n%s\n", id_, e.what());
     }
     auto tend = std::chrono::steady_clock::now();
     std::chrono::duration<double> dt = tend - tstart;
     double readRate = readBytes / 1024.0 / 1024.0 / 1024.0 / dt.count();
     double wroteRate = wroteBytes / 1024.0 / 1024.0 / 1024.0 / dt.count();
-    printf("Read %u orbits (%u truncated, %.4f%%), %.3f GB\n",
+    printf("%02u: Read %u orbits (%u truncated, %.4f%%), %.3f GB\n",
+           id_,
            orbits_.load(),
            truncorbits_.load(),
            truncorbits_.load() * 100.0 / orbits_.load(),
            readBytes / (1024. * 1024. * 1024.));
-    printf("Wrote %.3f GB to %s\n",
+    printf("%02u: Wrote %.3f GB to %s\n",
+           id_,
            wroteBytes / (1024. * 1024. * 1024.),
            fname_.c_str());
-    printf("Data rate in %.3f GB/s, out %.3f GB/s\n", readRate, wroteRate);
+    printf("%02u: Data rate in %.3f GB/s, out %.3f GB/s\n", id_, readRate, wroteRate);
     printf("\n");
     std::free(orbit_buff);
     return 0;
@@ -563,7 +669,149 @@ protected:
   bool checkData_;
 };
 
-int setup_tcp(const char *addr, const char *port) {
+class DTHBasicChecker256 : public CheckerBase {
+public:
+  DTHBasicChecker256(unsigned int orbSize_kb, bool checkData = true, bool trailZeros = false)
+      : CheckerBase(), orbSize_(orbSize_kb * 1024), checkData_(checkData), trailZeros_(trailZeros) {}
+  ~DTHBasicChecker256() override{};
+
+  bool readChunk(std::fstream &in, uint8_t *&ptr, unsigned size256) {
+    in.read(reinterpret_cast<char *>(ptr), size256 << 5);
+    ptr += (size256 << 5);
+    return (in.gcount() != 0);
+  }
+
+  bool readChunk(int sockfd, uint8_t *&ptr, unsigned size256) {
+    size_t toread = size256 << 5;
+    while (toread > 0) {
+      int n = read(sockfd, reinterpret_cast<char *>(ptr), toread);
+      if (n <= 0)
+        return false;
+      toread -= n;
+      ptr += n;
+    }
+    return true;
+  }
+
+  int run(int in) override {
+    uint8_t buff256[32];
+    uint64_t buff64;
+    uint8_t *orbit_buff = reinterpret_cast<uint8_t *>(std::aligned_alloc(4096u, orbSize_));
+    unsigned int nprint = 100;
+    auto tstart = std::chrono::steady_clock::now();
+    bool isfirst = true;
+    int toprint = nprint;
+    try {
+      while (good(in) && orbits_ <= maxorbits_) {
+        uint8_t *ptr = orbit_buff, *end = orbit_buff + orbSize_;
+        DTH_Header256 dthh = readDTH256(in, buff256, true, false);
+        if (isfirst) {
+          tstart = std::chrono::steady_clock::now();
+          isfirst = false;
+        }
+        uint32_t totlen256 = dthh.size256;
+        assert(ptr + (dthh.size256 << 5) < end);
+        try {
+          dthh.ok = readChunk(in, ptr, dthh.size256);
+          while (dthh.ok && !dthh.end) {
+            dthh = readDTH256(in, buff256, false, false);
+            if (!dthh.ok)
+              break;
+            totlen256 += dthh.size256;
+            assert(ptr + (dthh.size256 << 5) < end);
+            dthh.ok = readChunk(in, ptr, dthh.size256);
+          }
+        } catch(const std::exception &e) {
+          printf("%02u: Exception was raised in reading DTH frame:\n%s\n", id_, e.what());
+          std::fstream dth_debug_dump("dth_debug.dump", std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
+          dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), (totlen256 << 5));
+          buff64 = 0x4441454444414544;
+          dth_debug_dump.write(reinterpret_cast<char *>(&buff64), 8);
+          dth_debug_dump.write(reinterpret_cast<char *>(&buff64), 8);
+          dth_debug_dump.write(reinterpret_cast<char *>(buff256), 32);
+          for (int i = 0; i < 5; ++i) {
+            int n = read(in, reinterpret_cast<char *>(orbit_buff), orbSize_);
+            if (n <= 0) break;
+            dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), n);
+          }
+          printf("Dumped some data in dth_debug.dump\n");
+          throw e;
+        }
+        if (!dthh.ok)
+          break;
+        if (!checkData_) {
+          orbits_++;
+          if (totlen256 == 1)
+            truncorbits_++;
+          puppis_ += totlen256 * 4;
+          if (--toprint == 0) {
+            printf("Read %7u orbits\n", orbits_.load());
+            nprint = std::min(nprint << 1, 10000u);
+            toprint = nprint;
+          }
+          continue;
+        }
+        ptr = orbit_buff;
+        end = ptr + (totlen256 << 5);
+        if (totlen256 <= 1) {  // truncated orbit
+          PuppiOrbitHeader oh = readPuppiOrbitHeader(ptr, end, buff64);
+          uint32_t orbitno = oh.orbit;
+          if (!(oldorbit_ == std::numeric_limits<unsigned int>::max() || orbitno == oldorbit_ + orbitMux_)) {
+            printf("%02u: Orbit number mismatch, found %u after %u (orbit header %016lx, err %d)\n", id_, orbitno, oldorbit_, buff64, oh.err);
+            orbitno = oldorbit_+orbitMux_;
+          }
+          assert(oldorbit_ == std::numeric_limits<unsigned int>::max() || orbitno == oldorbit_ + orbitMux_);
+          oldorbit_ = orbitno;
+          orbits_ += 1;
+          truncorbits_ += 1;
+          continue;
+        } 
+        while (ptr < end) {
+          PuppiHeader evh = readPuppiHeader(ptr, end, buff64);
+          unsigned int n64 = evh.npuppi + 1;
+          puppis_ += evh.npuppi;
+          bool truncated = (evh.npuppi == 0) && evh.err; // check error bit
+          ptr += (n64 - 1) << 3;
+          countEventsAndOrbits(evh.orbit, evh.bx, truncated);
+          while (trailZeros_ && ptr + 7 < end && ((*reinterpret_cast<const uint64_t *>(ptr)) == 0)) {
+            ptr += 8;
+          }
+          if (ptr + 7 < end && ptr + 3*8 >= end) { // 1-3 words remaining, they may be nulls
+            if ((*reinterpret_cast<const uint64_t *>(ptr)) == 0) {
+              break;
+            }
+          }
+        }
+        if (--toprint == 0) {
+          if (truncevents_ || truncorbits_) {
+            printf("%02u: Read %10lu events, %7u orbits. Truncated %8lu events, %7u orbits\n",
+                   id_,
+                   events_.load(),
+                   orbits_.load(),
+                   truncevents_.load(),
+                   truncorbits_.load());
+          } else {
+            printf("%02u: Read %10lu events, %7u orbits\n", id_, events_.load(), orbits_.load());
+          }
+          nprint = std::min(nprint << 1, 10000u);
+          toprint = nprint;
+        }
+      }
+    } catch (const std::exception &e) {
+      printf("%02u:Terminating an exception was raised:\n%s\n", id_, e.what());
+    }
+    auto tend = std::chrono::steady_clock::now();
+    printDone(tstart, tend);
+    std::free(orbit_buff);
+    return 0;
+  }
+
+protected:
+  unsigned int orbSize_;
+  bool checkData_, trailZeros_;
+};
+
+int setup_tcp(const char *addr, const char *port, unsigned int port_offs=0) {
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0) {
     perror("ERROR opening socket");
@@ -572,30 +820,30 @@ int setup_tcp(const char *addr, const char *port) {
   struct sockaddr_in serv_addr;
   bzero((char *)&serv_addr, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(atoi(port));
+  serv_addr.sin_port = htons(std::atoi(port)+port_offs);
   serv_addr.sin_addr.s_addr = inet_addr(addr);
   if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
     perror("ERROR on binding");
     return -2;
   }
-  printf("Set up server on %s port %s\n", addr, port);
+  printf("Set up server on %s port %u\n", addr, std::atoi(port) + port_offs);
   fflush(stdout);
   listen(sockfd, 5);
   return sockfd;
 }
 
-int receive_tcp(const char *addr, const char *port) {
-  static int sockfd = setup_tcp(addr, port);  // done only once per job
+int receive_tcp(const char *addr, const char *port, unsigned int port_offs=0) {
+  thread_local static int sockfd = setup_tcp(addr, port, port_offs);  // done only once per job
   struct sockaddr_in cli_addr;
   bzero((char *)&cli_addr, sizeof(cli_addr));
   socklen_t clilen = sizeof(cli_addr);
-  printf("Wait for client on %s port %s\n", addr, port);
+  printf("Wait for client on %s port %u\n", addr, std::atoi(port) + port_offs);
   int newsockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen);
   if (newsockfd < 0) {
     perror("ERROR on accept");
     return -3;
   }
-  printf("Connection accepted\n");
+  printf("Connection accepted on port %u\n", std::atoi(port) + port_offs);
   fflush(stdout);
   return newsockfd;
 }
@@ -608,13 +856,14 @@ int open_file(const char *fname) {
   return sourcefd;
 }
 
-int open_source(const std::string &src) {
+int open_source(const std::string &src, unsigned int iclient=0) {
   auto pos = src.find(':');
   if (pos == std::string::npos) {
+    assert(iclient == 0);
     return open_file(src.c_str());
   } else {
     std::string ip = src.substr(0, pos), port = src.substr(pos + 1);
-    return receive_tcp(ip.c_str(), port.c_str());
+    return receive_tcp(ip.c_str(), port.c_str(), iclient);
   }
 }
 class TrashData : public CheckerBase {
@@ -723,12 +972,33 @@ int print_usage(const char *self, int retval) {
   printf("   -B, --buffsize B : uses a read buffer size of B kB  (default: 4)\n");
   printf("   -O  --orbsize  B : uses an orbit buffer size of B kB (default: 2048)\n");
   printf("   -k  --keep    : keep running \n");
+  printf("   -n, --nclients N : runs N clients for timelices 0..N-1 with increasing port numbers\n");
   printf("\n");
   return retval;
 }
+
+void start_and_run(std::unique_ptr<CheckerBase> && checker,
+                   const std::string & src,
+                   int client,
+                   bool keep_running) 
+{
+    printf("Staring in client %d\n", client);
+    do {
+      int sourcefd = open_source(src, client);
+      if (sourcefd < 0) {
+        printf("Error in opening source %s for client %d.\n", src.c_str(), client);
+        return;
+      }
+      checker->run(sourcefd);
+      checker->clear();
+    } while (keep_running);
+    printf("Done in client %d\n", client);
+}
+
+
 int main(int argc, char **argv) {
-  int debug = 0, tmux = 6, tmux_slice = 0, orbitmux = 1, buffsize_kb = 4, orbsize_kb = 2048;
-  bool keep_running = 0;
+  int debug = 0, tmux = 6, tmux_slice = 0, orbitmux = 1, buffsize_kb = 4, orbsize_kb = 2048, nclients = 1;
+  bool keep_running = false, zeropad = false;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
                                            {"keep", no_argument, nullptr, 'k'},
@@ -738,10 +1008,12 @@ int main(int argc, char **argv) {
                                            {"tslice", required_argument, nullptr, 't'},
                                            {"buffsize", required_argument, nullptr, 'B'},
                                            {"orbsize", required_argument, nullptr, 'O'},
+                                           {"nclients", required_argument, nullptr, 'n'},
+                                           {"zeropad", no_argument, nullptr, 'z'},
                                            {nullptr, 0, nullptr, 0}};
     /* getopt_long stores the option index here. */
     int option_index = 0;
-    int optc = getopt_long(argc, argv, "khd:T:t:b:O:", long_options, &option_index);
+    int optc = getopt_long(argc, argv, "khd:T:t:b:O:n:z", long_options, &option_index);
 
     /* Detect the end of the options. */
     if (optc == -1)
@@ -755,6 +1027,9 @@ int main(int argc, char **argv) {
         break;
       case 't':
         tmux_slice = std::atoi(optarg);
+        break;
+      case 'n':
+        nclients = std::atoi(optarg);
         break;
       case 'T':
         tmux = std::atoi(optarg);
@@ -771,6 +1046,9 @@ int main(int argc, char **argv) {
       case 'k':
         keep_running = true;
         break;
+      case 'z':
+        zeropad = true;
+        break;
       default:
         return print_usage(argv[0], 1);
     }
@@ -783,41 +1061,46 @@ int main(int argc, char **argv) {
   std::string src(argv[optind++]);
 
   int ret;
-  do {
-    std::unique_ptr<CheckerBase> checker;
-    if (kind == "Native128") {
-      checker.reset(new NativeChecker(/*padTo128=*/true));
-    } else if (kind == "DTHBasic") {
-      checker.reset(new DTHBasicChecker());
-    } else if (kind == "DTHBasicOA" || kind == "DTHBasicOA-NC") {
-      checker.reset(new DTHBasicCheckerOA(orbsize_kb, kind != "DTHBasicOA-NC"));
-    } else if (kind == "DTHReceiveOA") {
-      if (nargs != 3 && nargs != 4) {
-        printf("Usage: %s DTHReceiveOA ip:port outfile [prescale] \n", argv[0]);
+  std::vector<std::thread> client_threads;
+  for (int client = 0; client < nclients; ++client) {
+      std::unique_ptr<CheckerBase> checker;
+      if (kind == "Native128") {
+        checker.reset(new NativeChecker(/*padTo128=*/true));
+      } else if (kind == "DTHBasic") {
+        checker.reset(new DTHBasicChecker());
+      } else if (kind == "DTHBasicOA" || kind == "DTHBasicOA-NC" || kind == "DTHBasicOA-NoSR") {
+        checker.reset(new DTHBasicCheckerOA(orbsize_kb, kind != "DTHBasicOA-NC", kind != "DTHBasicOA-NoSR"));
+      } else if (kind == "DTHReceiveOA") {
+        if (nargs != 3 && nargs != 4) {
+          printf("Usage: %s DTHReceiveOA ip:port outfile [prescale] \n", argv[0]);
+          return 3;
+        }
+        unsigned int prescale = (nargs == 3) ? 100 : std::atoi(argv[optind+1]);
+        checker.reset(new DTHReceiveOA(orbsize_kb, argv[optind], prescale));
+      } else if (kind == "DTHBasic256" || kind == "DTHBasic256-NC") {
+        checker.reset(new DTHBasicChecker256(orbsize_kb, kind != "DTHBasic256-NC", zeropad));
+      } else if (kind == "TrashData") {
+        checker.reset(new TrashData(buffsize_kb));
+      } else if (kind == "ReceiveAndStore") {
+        if (nargs != 4) {
+          printf("Usage: %s ReceiveAndStore ip:port filesize_Gb outfile\n", argv[0]);
+          return 3;
+        }
+        checker.reset(new ReceiveAndStore(buffsize_kb, orbsize_kb, std::atoi(argv[optind]), argv[optind + 1]));
+      } else {
+        printf("Unsupported mode '%s'\n", kind.c_str());
         return 3;
       }
-      unsigned int prescale = (nargs == 3) ? 100 : std::atoi(argv[optind+1]);
-      checker.reset(new DTHReceiveOA(orbsize_kb, argv[optind], prescale));
-    } else if (kind == "TrashData") {
-      checker.reset(new TrashData(buffsize_kb));
-    } else if (kind == "ReceiveAndStore") {
-      if (nargs != 4) {
-        printf("Usage: %s ReceiveAndStore ip:port filesize_Gb outfile\n", argv[0]);
-        return 3;
+      if (orbitmux == 1) {
+        checker->init(tmux, tmux_slice + client, orbitmux);
+      } else {
+        checker->init(tmux, tmux_slice, orbitmux);
+        checker->setId(client);
       }
-      checker.reset(new ReceiveAndStore(buffsize_kb, orbsize_kb, std::atoi(argv[optind]), argv[optind + 1]));
-    } else {
-      printf("Unsupported mode '%s'\n", kind.c_str());
-      return 3;
-    }
-    checker->init(tmux, tmux_slice, orbitmux);
-    checker->setDebug(debug);
+      checker->setDebug(debug);
 
-    int sourcefd = open_source(src);
-    if (sourcefd < 0)
-      return 2;
-
-    ret = checker->run(sourcefd);
-  } while (keep_running);
+      client_threads.emplace_back(start_and_run, std::move(checker), src, client, keep_running);
+  }
+  for (auto & t : client_threads) t.join();
   return ret;
 }
