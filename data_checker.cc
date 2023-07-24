@@ -128,19 +128,25 @@ public:
       printf("\n");
     }
     if (!(out[0] == 0x47 && out[1] == 0x5a)) {
-      printf("Bad DTH256 header, missing magic: start %d, end %d, length256 %u:", int(ret.start), int(ret.end), unsigned(ret.size256));
+      printf("Bad DTH256 header, missing magic: start %d, end %d, length256 %u:",
+             int(ret.start),
+             int(ret.end),
+             unsigned(ret.size256));
       print256(out);
       printf("\n");
-      throw std::runtime_error(std::to_string(id_)+": Bad DTH256 header, missing magic");
+      throw std::runtime_error(std::to_string(id_) + ": Bad DTH256 header, missing magic");
       ret.start = false;
       ret.end = false;
       ret.size256 = 0xff;
     }
-    if (!(ret.end || (ret.size256 == 0xFF))) throw std::runtime_error(std::to_string(id_)+": Bad DTH256 header, size != 255 but end flag 0");
+    if (!(ret.end || (ret.size256 == 0xFF)))
+      throw std::runtime_error(std::to_string(id_) + ": Bad DTH256 header, size != 255 but end flag 0");
     if (checkStart)
-      if (!ret.start) throw std::runtime_error(std::to_string(id_)+": Bad DTH256 header, expecting start bit set");
+      if (!ret.start)
+        throw std::runtime_error(std::to_string(id_) + ": Bad DTH256 header, expecting start bit set");
     if (checkEnd)
-      if (!ret.end) throw std::runtime_error(std::to_string(id_)+": Bad DTH256 header, expecting end bit set");
+      if (!ret.end)
+        throw std::runtime_error(std::to_string(id_) + ": Bad DTH256 header, expecting end bit set");
     return ret;
   }
   uint64_t readSRHeader(int sockfd, uint8_t out[16], bool checkEv = false) {
@@ -162,8 +168,8 @@ public:
       printf("\n");
     }
     if (checkEv && oldrecord_ != std::numeric_limits<uint64_t>::max() && evno != oldrecord_ + 1) {
-      throw std::runtime_error(std::to_string(id_)+": Record number mismatch, found " + std::to_string(evno) + " after " +
-                               std::to_string(oldrecord_));
+      throw std::runtime_error(std::to_string(id_) + ": Record number mismatch, found " + std::to_string(evno) +
+                               " after " + std::to_string(oldrecord_));
     }
     oldrecord_ = evno;
     return evno;
@@ -218,15 +224,18 @@ public:
       return PuppiHeader();
     }
     if (n != 8)
-      throw std::runtime_error(std::to_string(id_)+": Failed reading Event Header, got only " + std::to_string(n) + "/8 bytes.");
+      throw std::runtime_error(std::to_string(id_) + ": Failed reading Event Header, got only " + std::to_string(n) +
+                               "/8 bytes.");
     return parsePuppiHeader(out);
   }
-   PuppiHeader readPuppiHeaderSkippingZeros(int sockfd, uint64_t &out) {
+  PuppiHeader readPuppiHeaderSkippingZeros(int sockfd, uint64_t &out) {
     do {
       int n = read(sockfd, reinterpret_cast<char *>(&out), 8);
-      if (n == 0) break;
+      if (n == 0)
+        break;
       if (n != 8)
-        throw std::runtime_error(std::to_string(id_)+": Failed reading Event Header, got only " + std::to_string(n) + "/8 bytes.");
+        throw std::runtime_error(std::to_string(id_) + ": Failed reading Event Header, got only " + std::to_string(n) +
+                                 "/8 bytes.");
       if (out != 0)
         return parsePuppiHeader(out);
     } while (good(sockfd));
@@ -244,11 +253,17 @@ public:
     ret.orbit = (out >> 24) & 0xFFFFFFFF;
     ret.bx = (out >> 12) & 0xFFF;
     ret.npuppi = out & 0xFFF;
-    ret.err = (out & (1llu<<61));
+    ret.err = (out & (1llu << 61));
     if ((out >> 62) != 0b10)
-      throw std::runtime_error(std::to_string(id_)+": Bad event header found: " + std::to_string(out));
+      throw std::runtime_error(std::to_string(id_) + ": Bad event header found: " + std::to_string(out));
     if (events_ < ndebug_) {
-      printf("Event header %016lx, orbit %u (%x), bx %u, npuppi %d, ok %d\n", out, ret.orbit, ret.orbit, ret.bx, ret.npuppi, int(!ret.err));
+      printf("Event header %016lx, orbit %u (%x), bx %u, npuppi %d, ok %d\n",
+             out,
+             ret.orbit,
+             ret.orbit,
+             ret.bx,
+             ret.npuppi,
+             int(!ret.err));
     }
     return ret;
   }
@@ -259,7 +274,8 @@ public:
       return PuppiOrbitHeader();
     }
     if (n != 8)
-      throw std::runtime_error(std::to_string(id_)+": Failed reading Event Header, got only " + std::to_string(n) + "/8 bytes.");
+      throw std::runtime_error(std::to_string(id_) + ": Failed reading Event Header, got only " + std::to_string(n) +
+                               "/8 bytes.");
     return parsePuppiOrbitHeader(out);
   }
   PuppiOrbitHeader readPuppiOrbitHeader(uint8_t *&ptr, const uint8_t *end, uint64_t &out) {
@@ -272,11 +288,16 @@ public:
     PuppiOrbitHeader ret;
     ret.orbit = (out >> 24) & 0xFFFFFFFF;
     ret.length = out & 0xFFFFFF;
-    ret.err = (out & (1llu<<61));
+    ret.err = (out & (1llu << 61));
     if ((out >> 62) != 0b11)
-      throw std::runtime_error(std::to_string(id_)+": Bad orbit header found: " + std::to_string(out));
+      throw std::runtime_error(std::to_string(id_) + ": Bad orbit header found: " + std::to_string(out));
     if (events_ < ndebug_) {
-      printf("Orbit header %016lx, orbit %u (%x), length %u, ok %d\n", out, ret.orbit, ret.orbit, ret.length, int(!ret.err));
+      printf("Orbit header %016lx, orbit %u (%x), length %u, ok %d\n",
+             out,
+             ret.orbit,
+             ret.orbit,
+             ret.length,
+             int(!ret.err));
     }
     return ret;
   }
@@ -291,8 +312,9 @@ public:
   void countEventsAndOrbits(unsigned long orbit, unsigned int bx, bool truncated = false) {
     if (orbit != oldorbit_) {
       if (oldorbit_ != std::numeric_limits<unsigned int>::max() && (orbit != oldorbit_ + orbitMux_)) {
-        throw std::runtime_error(std::to_string(id_)+": Orbit mismatch: found orbit " + std::to_string(orbit) + " bx " + std::to_string(bx) +
-                                 " after orbit " + std::to_string(oldorbit_) + " bx " + std::to_string(oldbx_));
+        throw std::runtime_error(std::to_string(id_) + ": Orbit mismatch: found orbit " + std::to_string(orbit) +
+                                 " bx " + std::to_string(bx) + " after orbit " + std::to_string(oldorbit_) + " bx " +
+                                 std::to_string(oldbx_));
       }
       if (truncevents_orbit_ > 0)
         truncorbits_++;
@@ -306,8 +328,8 @@ public:
       oldbx_ = bx;
     } else {
       if (oldbx_ != std::numeric_limits<unsigned int>::max() && bx != oldbx_ + tmux_) {
-        throw std::runtime_error(std::to_string(id_) + ": BX mismatch: found " + std::to_string(unsigned(bx)) + " after " +
-                                 std::to_string(oldbx_) + ", expected " + std::to_string(oldbx_ + tmux_));
+        throw std::runtime_error(std::to_string(id_) + ": BX mismatch: found " + std::to_string(unsigned(bx)) +
+                                 " after " + std::to_string(oldbx_) + ", expected " + std::to_string(oldbx_ + tmux_));
       }
       oldbx_ = bx;
     }
@@ -326,19 +348,24 @@ public:
     double dt_lhc = orbits_ / orbrate_lhc;
     double datarate = totbytes / 1024.0 / 1024.0 / 1024.0 / dt.count();
     double fillrate = totbytes / 1024.0 / 1024.0 / 1024.0 / dt_lhc;
-    printf("%02u: Read %u orbits, %lu events, %lu candidates, %lu bytes\n", 
+    printf("%02u: Read %u orbits, %lu events, %lu candidates, %lu bytes\n",
            id_,
            orbits_.load(),
            events_.load(),
            puppis_.load(),
            totbytes);
-    printf("%02u: Time to read %.2f ms, LHC time %.2f ms (x %.3f)\n", id_, dt.count() * 1000, dt_lhc * 1000, dt_lhc / dt.count());
+    printf("%02u: Time to read %.2f ms, LHC time %.2f ms (x %.3f)\n",
+           id_,
+           dt.count() * 1000,
+           dt_lhc * 1000,
+           dt_lhc / dt.count());
     printf("%02u: Orbit rate %.3f kHz (TM1 %.3f kHz), event rate %.2f kHz\n",
            id_,
            orbrate / 1000,
            orbrate_lhc / 1000.,
            evrate / 1000.);
-    printf("%02u: Data rate %.3f GB/s, input data rate %.3f GB/s (x %.3f)\n", id_, datarate, fillrate, fillrate / datarate);
+    printf(
+        "%02u: Data rate %.3f GB/s, input data rate %.3f GB/s (x %.3f)\n", id_, datarate, fillrate, fillrate / datarate);
     if (truncevents_ || truncorbits_) {
       printf("%02u: Truncated events %lu (%.4f%%), orbits %u (%.4f%%)\n",
              id_,
@@ -375,7 +402,8 @@ protected:
 
 class NativeChecker : public CheckerBase {
 public:
-  NativeChecker(bool padTo128 = true, bool skipZeros = false) : CheckerBase(), padTo128_(padTo128), skipZeros_(skipZeros) {}
+  NativeChecker(bool padTo128 = true, bool skipZeros = false)
+      : CheckerBase(), padTo128_(padTo128), skipZeros_(skipZeros) {}
   ~NativeChecker() override{};
 
   int run(int in) override {
@@ -386,7 +414,8 @@ public:
     try {
       while (good(in) && orbits_ <= maxorbits_) {
         PuppiHeader evh = skipZeros_ ? readPuppiHeaderSkippingZeros(in, buff64) : readPuppiHeader(in, buff64);
-        if (buff64 == 0) break;
+        if (buff64 == 0)
+          break;
         unsigned int n64 = evh.npuppi + 1;
         bool truncated = false;
         if (padTo128_) {
@@ -548,21 +577,21 @@ public:
         }
         if (totlen128 == trunclen128) {  // truncated orbit
           if (srHeaders_) {
-              SR_Trailer srt = readSRTrailer(ptr, end);
-              assert(totlen128 == srt.len);
-              orbitno = srt.orbit;
+            SR_Trailer srt = readSRTrailer(ptr, end);
+            assert(totlen128 == srt.len);
+            orbitno = srt.orbit;
           } else {
-              PuppiHeader evh = readPuppiHeader(ptr, end, buff64);
-              orbitno = evh.orbit;
-              ptr++;
+            PuppiHeader evh = readPuppiHeader(ptr, end, buff64);
+            orbitno = evh.orbit;
+            ptr++;
           }
           assert(oldorbit_ == std::numeric_limits<unsigned int>::max() || orbitno == oldorbit_ + 1);
           oldorbit_ = orbitno;
           orbits_ += 1;
           truncorbits_ += 1;
           continue;
-        } 
-        
+        }
+
         while (ptr + tail8 < end) {
           PuppiHeader evh = readPuppiHeader(ptr, end, buff64);
           unsigned int n64 = evh.npuppi + 1;
@@ -652,7 +681,7 @@ public:
           truncorbits_++;
         readBytes += totlen128 << 4;
         if (orbits_ % prescale_ == 0) {
-          fout_.write(reinterpret_cast<char *>(orbit_buff+16), (totlen128-2) << 4);
+          fout_.write(reinterpret_cast<char *>(orbit_buff + 16), (totlen128 - 2) << 4);
           wroteBytes += totlen128 << 4;
         }
         if (--toprint == 0) {
@@ -681,10 +710,7 @@ public:
            truncorbits_.load(),
            truncorbits_.load() * 100.0 / orbits_.load(),
            readBytes / (1024. * 1024. * 1024.));
-    printf("%02u: Wrote %.3f GB to %s\n",
-           id_,
-           wroteBytes / (1024. * 1024. * 1024.),
-           fname_.c_str());
+    printf("%02u: Wrote %.3f GB to %s\n", id_, wroteBytes / (1024. * 1024. * 1024.), fname_.c_str());
     printf("%02u: Data rate in %.3f GB/s, out %.3f GB/s\n", id_, readRate, wroteRate);
     printf("\n");
     std::free(orbit_buff);
@@ -752,9 +778,10 @@ public:
             assert(ptr + (dthh.size256 << 5) < end);
             dthh.ok = readChunk(in, ptr, dthh.size256);
           }
-        } catch(const std::exception &e) {
+        } catch (const std::exception &e) {
           printf("%02u: Exception was raised in reading DTH frame:\n%s\n", id_, e.what());
-          std::fstream dth_debug_dump("dth_debug.dump", std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
+          std::fstream dth_debug_dump("dth_debug.dump",
+                                      std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
           dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), (totlen256 << 5));
           buff64 = 0x4441454444414544;
           dth_debug_dump.write(reinterpret_cast<char *>(&buff64), 8);
@@ -762,7 +789,8 @@ public:
           dth_debug_dump.write(reinterpret_cast<char *>(buff256), 32);
           for (int i = 0; i < 5; ++i) {
             int n = read(in, reinterpret_cast<char *>(orbit_buff), orbSize_);
-            if (n <= 0) break;
+            if (n <= 0)
+              break;
             dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), n);
           }
           printf("Dumped some data in dth_debug.dump\n");
@@ -789,26 +817,31 @@ public:
           PuppiOrbitHeader oh = readPuppiOrbitHeader(ptr, end, buff64);
           uint32_t orbitno = oh.orbit;
           if (!(oldorbit_ == std::numeric_limits<unsigned int>::max() || orbitno == oldorbit_ + orbitMux_)) {
-            printf("%02u: Orbit number mismatch, found %u after %u (orbit header %016lx, err %d)\n", id_, orbitno, oldorbit_, buff64, oh.err);
-            orbitno = oldorbit_+orbitMux_;
+            printf("%02u: Orbit number mismatch, found %u after %u (orbit header %016lx, err %d)\n",
+                   id_,
+                   orbitno,
+                   oldorbit_,
+                   buff64,
+                   oh.err);
+            orbitno = oldorbit_ + orbitMux_;
           }
           assert(oldorbit_ == std::numeric_limits<unsigned int>::max() || orbitno == oldorbit_ + orbitMux_);
           oldorbit_ = orbitno;
           orbits_ += 1;
           truncorbits_ += 1;
           continue;
-        } 
+        }
         while (ptr < end) {
           PuppiHeader evh = readPuppiHeader(ptr, end, buff64);
           unsigned int n64 = evh.npuppi + 1;
           puppis_ += evh.npuppi;
-          bool truncated = (evh.npuppi == 0) && evh.err; // check error bit
+          bool truncated = (evh.npuppi == 0) && evh.err;  // check error bit
           ptr += (n64 - 1) << 3;
           countEventsAndOrbits(evh.orbit, evh.bx, truncated);
           while (trailZeros_ && ptr + 7 < end && ((*reinterpret_cast<const uint64_t *>(ptr)) == 0)) {
             ptr += 8;
           }
-          if (ptr + 7 < end && ptr + 3*8 >= end) { // 1-3 words remaining, they may be nulls
+          if (ptr + 7 < end && ptr + 3 * 8 >= end) {  // 1-3 words remaining, they may be nulls
             if ((*reinterpret_cast<const uint64_t *>(ptr)) == 0) {
               break;
             }
@@ -845,8 +878,8 @@ protected:
 };
 
 class DTHReceive256 : public DTHBasicChecker256 {
-  public:
-    DTHReceive256(unsigned int orbSize_kb, const char *fname, unsigned int prescale, unsigned long maxSize_gb = 4)
+public:
+  DTHReceive256(unsigned int orbSize_kb, const char *fname, unsigned int prescale, unsigned long maxSize_gb = 4)
       : DTHBasicChecker256(orbSize_kb),
         prescale_(prescale),
         maxSize_(maxSize_gb << 30),
@@ -885,9 +918,10 @@ class DTHReceive256 : public DTHBasicChecker256 {
             assert(ptr + (dthh.size256 << 5) < end);
             dthh.ok = readChunk(in, ptr, dthh.size256);
           }
-        } catch(const std::exception &e) {
+        } catch (const std::exception &e) {
           printf("%02u: Exception was raised in reading DTH frame:\n%s\n", id_, e.what());
-          std::fstream dth_debug_dump("dth_debug.dump", std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
+          std::fstream dth_debug_dump("dth_debug.dump",
+                                      std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
           dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), (totlen256 << 5));
           buff64 = 0x4441454444414544;
           dth_debug_dump.write(reinterpret_cast<char *>(&buff64), 8);
@@ -895,7 +929,8 @@ class DTHReceive256 : public DTHBasicChecker256 {
           dth_debug_dump.write(reinterpret_cast<char *>(buff256), 32);
           for (int i = 0; i < 5; ++i) {
             int n = read(in, reinterpret_cast<char *>(orbit_buff), orbSize_);
-            if (n <= 0) break;
+            if (n <= 0)
+              break;
             dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), n);
           }
           printf("Dumped some data in dth_debug.dump\n");
@@ -907,7 +942,7 @@ class DTHReceive256 : public DTHBasicChecker256 {
         orbits_++;
         ptr = orbit_buff;
         end = ptr + (totlen256 << 5);
-        PuppiOrbitHeader oh ;
+        PuppiOrbitHeader oh;
         if (totlen256 <= 1) {
           truncorbits_++;
           if (totlen256 == 1) {
@@ -954,24 +989,21 @@ class DTHReceive256 : public DTHBasicChecker256 {
            truncorbits_.load(),
            truncorbits_.load() * 100.0 / orbits_.load(),
            readBytes / (1024. * 1024. * 1024.));
-    printf("%02u: Wrote %.3f GB to %s\n",
-           id_,
-           wroteBytes / (1024. * 1024. * 1024.),
-           fname_.c_str());
+    printf("%02u: Wrote %.3f GB to %s\n", id_, wroteBytes / (1024. * 1024. * 1024.), fname_.c_str());
     printf("%02u: Data rate in %.3f GB/s, out %.3f GB/s\n", id_, readRate, wroteRate);
     printf("\n");
     std::free(orbit_buff);
     return ret;
   }
 
-  protected:
-    unsigned int prescale_;
-    unsigned long int maxSize_;
-    std::string fname_;
-    std::fstream fout_;
+protected:
+  unsigned int prescale_;
+  unsigned long int maxSize_;
+  std::string fname_;
+  std::fstream fout_;
 };
 
-int setup_tcp(const char *addr, const char *port, unsigned int port_offs=0) {
+int setup_tcp(const char *addr, const char *port, unsigned int port_offs = 0) {
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0) {
     perror("ERROR opening socket");
@@ -980,7 +1012,7 @@ int setup_tcp(const char *addr, const char *port, unsigned int port_offs=0) {
   struct sockaddr_in serv_addr;
   bzero((char *)&serv_addr, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(std::atoi(port)+port_offs);
+  serv_addr.sin_port = htons(std::atoi(port) + port_offs);
   serv_addr.sin_addr.s_addr = inet_addr(addr);
   if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
     perror("ERROR on binding");
@@ -992,7 +1024,7 @@ int setup_tcp(const char *addr, const char *port, unsigned int port_offs=0) {
   return sockfd;
 }
 
-int receive_tcp(const char *addr, const char *port, unsigned int port_offs=0) {
+int receive_tcp(const char *addr, const char *port, unsigned int port_offs = 0) {
   thread_local static int sockfd = setup_tcp(addr, port, port_offs);  // done only once per job
   struct sockaddr_in cli_addr;
   bzero((char *)&cli_addr, sizeof(cli_addr));
@@ -1016,7 +1048,7 @@ int open_file(const char *fname) {
   return sourcefd;
 }
 
-int open_source(const std::string &src, unsigned int iclient=0) {
+int open_source(const std::string &src, unsigned int iclient = 0) {
   auto pos = src.find(':');
   if (pos == std::string::npos) {
     assert(iclient == 0);
@@ -1138,26 +1170,25 @@ int print_usage(const char *self, int retval) {
   return retval;
 }
 
-void start_and_run(std::unique_ptr<CheckerBase> && checker,
-                   const std::string & src,
+void start_and_run(std::unique_ptr<CheckerBase> &&checker,
+                   const std::string &src,
                    int client,
                    bool keep_running,
-                   std::atomic<unsigned int> * errors) 
-{
-    printf("Starting in client %d\n", client);
-    do {
-      int sourcefd = open_source(src, client);
-      if (sourcefd < 0) {
-        printf("Error in opening source %s for client %d.\n", src.c_str(), client);
-        return;
-      }
-      int ret = checker->run(sourcefd);
-      if (ret) errors->fetch_add(1);
-      checker->clear();
-    } while (keep_running);
-    printf("Done in client %d\n", client);
+                   std::atomic<unsigned int> *errors) {
+  printf("Starting in client %d\n", client);
+  do {
+    int sourcefd = open_source(src, client);
+    if (sourcefd < 0) {
+      printf("Error in opening source %s for client %d.\n", src.c_str(), client);
+      return;
+    }
+    int ret = checker->run(sourcefd);
+    if (ret)
+      errors->fetch_add(1);
+    checker->clear();
+  } while (keep_running);
+  printf("Done in client %d\n", client);
 }
-
 
 int main(int argc, char **argv) {
   int debug = 0, tmux = 6, tmux_slice = 0, orbitmux = 1, buffsize_kb = 4, orbsize_kb = 2048, nclients = 1;
@@ -1232,56 +1263,58 @@ int main(int argc, char **argv) {
   std::atomic<unsigned int> client_errors = 0;
   std::vector<std::thread> client_threads;
   for (int client = 0; client < nclients; ++client) {
-      std::unique_ptr<CheckerBase> checker;
-      if (kind == "Native128") {
-        checker.reset(new NativeChecker(/*padTo128=*/true));
-      } else if (kind == "Native64") {
-        checker.reset(new NativeChecker(/*padTo128=*/false));
-      } else if (kind == "Native64SZ") {
-        checker.reset(new NativeChecker(/*padTo128=*/false, /*skipZeros=*/true));
-      } else if (kind == "DTHBasic") {
-        checker.reset(new DTHBasicChecker());
-      } else if (kind == "DTHBasicOA" || kind == "DTHBasicOA-NC" || kind == "DTHBasicOA-NoSR") {
-        checker.reset(new DTHBasicCheckerOA(orbsize_kb, kind != "DTHBasicOA-NC", kind != "DTHBasicOA-NoSR"));
-      } else if (kind == "DTHReceiveOA") {
-        if (nargs != 3 && nargs != 4) {
-          printf("Usage: %s DTHReceiveOA ip:port outfile [prescale] \n", argv[0]);
-          return 3;
-        }
-        unsigned int prescale = (nargs == 3) ? 100 : std::atoi(argv[optind+1]);
-        checker.reset(new DTHReceiveOA(orbsize_kb, argv[optind], prescale));
-      } else if (kind == "DTHBasic256" || kind == "DTHBasic256-NC") {
-        checker.reset(new DTHBasicChecker256(orbsize_kb, kind != "DTHBasic256-NC", zeropad));
-      } else if (kind == "DTHReceive256") {
-        if (nargs != 3 && nargs != 4) {
-          printf("Usage: %s DTHReceive256 ip:port outfile [prescale] \n", argv[0]);
-          return 3;
-        }
-        unsigned int prescale = (nargs == 3) ? 100 : std::atoi(argv[optind+1]);
-        checker.reset(new DTHReceive256(orbsize_kb, argv[optind], prescale));        
-      } else if (kind == "TrashData") {
-        checker.reset(new TrashData(buffsize_kb));
-      } else if (kind == "ReceiveAndStore") {
-        if (nargs != 4) {
-          printf("Usage: %s ReceiveAndStore ip:port filesize_Gb outfile\n", argv[0]);
-          return 3;
-        }
-        checker.reset(new ReceiveAndStore(buffsize_kb, orbsize_kb, std::atoi(argv[optind]), argv[optind + 1]));
-      } else {
-        printf("Unsupported mode '%s'\n", kind.c_str());
+    std::unique_ptr<CheckerBase> checker;
+    if (kind == "Native128") {
+      checker.reset(new NativeChecker(/*padTo128=*/true));
+    } else if (kind == "Native64") {
+      checker.reset(new NativeChecker(/*padTo128=*/false));
+    } else if (kind == "Native64SZ") {
+      checker.reset(new NativeChecker(/*padTo128=*/false, /*skipZeros=*/true));
+    } else if (kind == "DTHBasic") {
+      checker.reset(new DTHBasicChecker());
+    } else if (kind == "DTHBasicOA" || kind == "DTHBasicOA-NC" || kind == "DTHBasicOA-NoSR") {
+      checker.reset(new DTHBasicCheckerOA(orbsize_kb, kind != "DTHBasicOA-NC", kind != "DTHBasicOA-NoSR"));
+    } else if (kind == "DTHReceiveOA") {
+      if (nargs != 3 && nargs != 4) {
+        printf("Usage: %s DTHReceiveOA ip:port outfile [prescale] \n", argv[0]);
         return 3;
       }
-      if (orbitmux == 1) {
-        checker->init(tmux, tmux_slice + client, orbitmux, maxorbits);
-      } else {
-        checker->init(tmux, tmux_slice, orbitmux, maxorbits);
-        checker->setId(client);
+      unsigned int prescale = (nargs == 3) ? 100 : std::atoi(argv[optind + 1]);
+      checker.reset(new DTHReceiveOA(orbsize_kb, argv[optind], prescale));
+    } else if (kind == "DTHBasic256" || kind == "DTHBasic256-NC") {
+      checker.reset(new DTHBasicChecker256(orbsize_kb, kind != "DTHBasic256-NC", zeropad));
+    } else if (kind == "DTHReceive256") {
+      if (nargs != 3 && nargs != 4) {
+        printf("Usage: %s DTHReceive256 ip:port outfile [prescale] \n", argv[0]);
+        return 3;
       }
-      checker->setDebug(debug);
+      unsigned int prescale = (nargs == 3) ? 100 : std::atoi(argv[optind + 1]);
+      checker.reset(new DTHReceive256(orbsize_kb, argv[optind], prescale));
+    } else if (kind == "TrashData") {
+      checker.reset(new TrashData(buffsize_kb));
+    } else if (kind == "ReceiveAndStore") {
+      if (nargs != 4) {
+        printf("Usage: %s ReceiveAndStore ip:port filesize_Gb outfile\n", argv[0]);
+        return 3;
+      }
+      checker.reset(new ReceiveAndStore(buffsize_kb, orbsize_kb, std::atoi(argv[optind]), argv[optind + 1]));
+    } else {
+      printf("Unsupported mode '%s'\n", kind.c_str());
+      return 3;
+    }
+    if (orbitmux == 1) {
+      checker->init(tmux, tmux_slice + client, orbitmux, maxorbits);
+    } else {
+      checker->init(tmux, tmux_slice, orbitmux, maxorbits);
+      checker->setId(client);
+    }
+    checker->setDebug(debug);
 
-      client_threads.emplace_back(start_and_run, std::move(checker), src, client, keep_running, &client_errors);
+    client_threads.emplace_back(start_and_run, std::move(checker), src, client, keep_running, &client_errors);
   }
-  for (auto & t : client_threads) t.join();
-  if (client_errors > 0) ret = 1;
+  for (auto &t : client_threads)
+    t.join();
+  if (client_errors > 0)
+    ret = 1;
   return ret;
 }

@@ -231,7 +231,7 @@ int main(int argc, char **argv) {
     uint16_t run, bx;
     uint32_t orbit;
     Bool_t good;
-    uint16_t npuppi, npuppi_c, npuppi_n; 
+    uint16_t npuppi, npuppi_c, npuppi_n;
     //puppi candidate info:
     float pt_c[255], pt_n[255], eta_c[255], eta_n[255], phi_c[255], phi_n[255];
     short int pdgid_c[255], pdgid_n[255];
@@ -276,7 +276,7 @@ int main(int argc, char **argv) {
                 run,
                 bx,
                 orbit,
-                good, 
+                good,
                 npuppi,
                 npuppi_c,
                 npuppi_n,
@@ -306,7 +306,7 @@ int main(int argc, char **argv) {
     uint8_t npuppi8;  // issues with uint8_t that root sees to max at 127
     uint16_t npuppi16;
     //puppi candidate info:
-   if (tree) {
+    if (tree) {
       tree->Branch("run", &run, "run/s");
       tree->Branch("orbit", &orbit, "orbit/i");
       tree->Branch("bx", &bx, "bx/s");

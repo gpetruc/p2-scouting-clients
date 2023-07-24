@@ -21,7 +21,8 @@ int main(int argc, char **argv) {
   if (argc < 3) {
     return 1;
   }
-  auto verbosity = ROOT::Experimental::RLogScopedVerbosity(ROOT::Experimental::NTupleLog(),  ROOT::Experimental::ELogLevel::kError);
+  auto verbosity =
+      ROOT::Experimental::RLogScopedVerbosity(ROOT::Experimental::NTupleLog(), ROOT::Experimental::ELogLevel::kError);
   int iarg = 1, narg = argc - 1;
   if (std::string(argv[iarg]) == "-j") {
     ROOT::EnableImplicitMT(std::stoi(argv[iarg + 1]));
@@ -87,7 +88,7 @@ int main(int argc, char **argv) {
     }
     timer.Start();
     while (fin.good()) {
-      readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good,*p_npuppi);
+      readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, *p_npuppi);
       unsigned int npuppi = *p_npuppi;
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&data[0]), npuppi * sizeof(uint64_t));
