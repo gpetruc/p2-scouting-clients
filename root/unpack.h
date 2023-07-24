@@ -4,19 +4,21 @@
 #include <math.h>
 #include <sys/stat.h>
 
-inline void readheader(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, uint16_t &npuppi) {
+inline void readheader(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, uint16_t &npuppi) {
         fin.read(reinterpret_cast<char*>(&header), sizeof(uint64_t));
         npuppi = header          & 0xFFF;
         bx     = (header >> 12)  & 0xFFF;
         orbit  = (header >> 24)  & 0X3FFFFFFF;
         run    = (header >> 54);
+        good   = (header & (1llu<<61));
 }
-inline void readheader(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, uint8_t &npuppi) {
+inline void readheader(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, uint8_t &npuppi) {
         fin.read(reinterpret_cast<char*>(&header), sizeof(uint64_t));
         npuppi = header          & 0xFF;
         bx     = (header >> 12)  & 0xFFF;
         orbit  = (header >> 24)  & 0X3FFFFFFF;
         run    = (header >> 54);
+        good   = (header & (1llu<<61));
 }
 inline void assignpdgid(uint8_t pid, short int &pdgid) {
     static constexpr int16_t PDGIDS[8] = { 130, 22, -211, 211, 11, -11, 13, -13};
@@ -106,13 +108,13 @@ inline void readneutral(uint64_t data, float &wpuppi, uint8_t &id) {
     wpuppi = wpuppiint / 256;
     id = (data >> 13) & 0x3F;
 }
-inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, 
+inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, 
                 uint16_t &npuppi, uint64_t (&data)[255],
                 uint16_t (&pt)[255], int16_t (&eta)[255], int16_t (&phi)[255], uint16_t (&pid)[255],
                 int16_t (&z0)[255], int8_t (&dxy)[255], uint16_t (&quality)[255],
                 uint16_t (&wpuppi)[255], uint16_t (&id)[255]
                 ) { //int, combined
-    readheader(fin, header, run, bx, orbit, npuppi);
+    readheader(fin, header, run, bx, orbit, good, npuppi);
     if (npuppi) fin.read(reinterpret_cast<char*>(&data[0]), npuppi*sizeof(uint64_t));
     for (uint16_t i = 0; i < npuppi; ++i) {
         readshared(data[i], pt[i], eta[i], phi[i]);
@@ -126,7 +128,7 @@ inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16
         }
     }
 }
-inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, 
+inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good,  
                 uint16_t &npuppi, uint16_t &npuppi_c, uint16_t &npuppi_n, uint64_t (&data)[255],
                 uint16_t (&pt_c)[255], uint16_t (&pt_n)[255], int16_t (&eta_c)[255], int16_t (&eta_n)[255],
                 int16_t (&phi_c)[255], int16_t (&phi_n)[255], uint16_t (&pid_c)[255], uint16_t (&pid_n)[255],
@@ -134,7 +136,7 @@ inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16
                 uint16_t (&wpuppi)[255], uint16_t (&id)[255]
                 ) { //int, separate
     npuppi_c = 0; npuppi_n = 0;
-    readheader(fin, header, run, bx, orbit, npuppi);
+    readheader(fin, header, run, bx, orbit, good, npuppi);
     if (npuppi) fin.read(reinterpret_cast<char*>(&data[0]), npuppi*sizeof(uint64_t));
     for (uint16_t i = 0; i < npuppi; ++i) {
         uint16_t pid = (data[i] >> 37) & 0x7;
@@ -151,13 +153,13 @@ inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16
         }
     }
 }
-inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, 
+inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, 
                 uint16_t &npuppi, uint64_t (&data)[255],
                 float (&pt)[255], float (&eta)[255], float (&phi)[255], short int (&pdgid)[255],
                 float (&z0)[255], float (&dxy)[255], uint16_t (&quality)[255],
                 float (&wpuppi)[255], uint16_t (&id)[255]
                 ) { //float, combined
-    readheader(fin, header, run, bx, orbit, npuppi);
+    readheader(fin, header, run, bx, orbit, good, npuppi);
     if (npuppi) fin.read(reinterpret_cast<char*>(&data[0]), npuppi*sizeof(uint64_t));
     for (uint16_t i = 0; i < npuppi; ++i) {
         readshared(data[i], pt[i], eta[i], phi[i]);
@@ -170,11 +172,11 @@ inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16
         }
     }
 }
-inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, 
+inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, 
                 uint8_t &npuppi, uint64_t *data,
                 float *pt, float *eta, float *phi, short int *pdgid,
                 float *z0, float *dxy, float *wpuppi, uint8_t *quality) { //float, combined
-    readheader(fin, header, run, bx, orbit, npuppi);
+    readheader(fin, header, run, bx, orbit, good, npuppi);
     if (npuppi) fin.read(reinterpret_cast<char*>(&data[0]), npuppi*sizeof(uint64_t));
     for (unsigned int i = 0, n = npuppi; i < n; ++i) {
         readshared(data[i], pt[i], eta[i], phi[i]);
@@ -187,11 +189,11 @@ inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16
         }
     }
 }
-inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, 
+inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, 
                 uint8_t &npuppi, uint64_t *data,
                 std::vector<float> &pt, std::vector<float> &eta, std::vector<float> &phi, std::vector<short int> &pdgid,
                 std::vector<float> &z0, std::vector<float> &dxy, std::vector<float> &wpuppi, std::vector<uint8_t> &quality) { //float, combined
-    readheader(fin, header, run, bx, orbit, npuppi);
+    readheader(fin, header, run, bx, orbit, good, npuppi);
     if (npuppi) fin.read(reinterpret_cast<char*>(&data[0]), npuppi*sizeof(uint64_t));
     unsigned int n = npuppi;
     pt.resize(n);
@@ -214,7 +216,7 @@ inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16
     }
 }
 
-inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, 
+inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, 
                 uint16_t &npuppi, uint16_t &npuppi_c, uint16_t &npuppi_n, uint64_t (&data)[255],
                 float (&pt_c)[255], float (&pt_n)[255], float (&eta_c)[255], float (&eta_n)[255],
                 float (&phi_c)[255], float (&phi_n)[255], short int (&pdgid_c)[255], short int (&pdgid_n)[255],
@@ -222,7 +224,7 @@ inline void readevent(std::fstream &fin, uint64_t &header, uint16_t &run, uint16
                 float (&wpuppi)[255], uint16_t (&id)[255]
                 ) { //float, separate
     npuppi_c = 0; npuppi_n = 0;
-    readheader(fin, header, run, bx, orbit, npuppi);
+    readheader(fin, header, run, bx, orbit, good, npuppi);
     if (npuppi) fin.read(reinterpret_cast<char*>(&data[0]), npuppi*sizeof(uint64_t));
     for (uint i = 0; i < npuppi; ++i) {
         if (readpid(data[i], pdgid_c[npuppi_c], pdgid_n[npuppi_n])) {

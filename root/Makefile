@@ -20,21 +20,29 @@ env:
 	@echo "source /cvmfs/sft.cern.ch/lcg/views/LCG_102/x86_64-centos8-gcc11-opt/setup.sh"
 
 clean:
-	@rm *.exe *.root 2> /dev/null || true
+	@rm *.exe *.root  MyDict.cxx MyDict_rdict.pcm 2> /dev/null || true
 
 
 run_test_speed: unpack.exe rntuple_unpack.exe
 	@echo "==== No output ===="
+	@./unpack.exe combined raw64 $(DATAFILE)
+	@./unpack.exe combined int $(DATAFILE)
 	@./unpack.exe combined float $(DATAFILE)
+	@./rntuple_unpack.exe combined raw64 $(DATAFILE)
 	@./rntuple_unpack.exe combined float $(DATAFILE)
 	@./rntuple_unpack.exe combined_coll float $(DATAFILE)
 	@./rntuple_unpack.exe combined_struct float $(DATAFILE)
 	@echo "==== With output ===="
+	@./unpack.exe combined raw64 $(DATAFILE)  /run/user/$$UID/out.root
+	@./unpack.exe combined int $(DATAFILE) /run/user/$$UID/out.root
 	@./unpack.exe combined float $(DATAFILE) /run/user/$$UID/out.root
 	@./unpack.exe combined float24 $(DATAFILE) /run/user/$$UID/out.root
+	@./rntuple_unpack.exe combined raw64 $(DATAFILE)  /run/user/$$UID/out.root
 	@./rntuple_unpack.exe combined float $(DATAFILE)  /run/user/$$UID/out.root
 	@./rntuple_unpack.exe combined_coll float $(DATAFILE)  /run/user/$$UID/out.root
 	@./rntuple_unpack.exe combined_struct float $(DATAFILE)  /run/user/$$UID/out.root
+
+run_test_comp: unpack.exe rntuple_unpack.exe
 	@echo "==== With LZ4 output ===="
 	@./unpack.exe -j 6 combined float24 $(DATAFILE) /run/user/$$UID/out.root lz4 4 
 	@./unpack.exe -j 6 combined float $(DATAFILE) /run/user/$$UID/out.root lz4 4
@@ -51,3 +59,5 @@ run_test_unpack: unpack.exe
 			./unpack.exe $$M $$T data/SingleNeutrino.dump unpack_$${T}_$${M}.root; \
 		done; \
 	done
+	@./unpack.exe combined raw64 data/SingleNeutrino.dump; \
+	@./unpack.exe combined raw64 data/SingleNeutrino.dump unpack_$${T}_$${M}.root; \

@@ -71,6 +71,7 @@ int main(int argc, char **argv) {
     uint64_t header, data[255];
     uint16_t run, bx;
     uint32_t orbit;
+    Bool_t good;
     uint16_t npuppi;  // issues with uint8_t that root sees to max at 127
     //puppi candidate info:
     uint16_t pt[255];
@@ -88,21 +89,22 @@ int main(int argc, char **argv) {
       tree->Branch("run", &run, "run/s");
       tree->Branch("orbit", &orbit, "orbit/i");
       tree->Branch("bx", &bx, "bx/s");
+      tree->Branch("good", &good, "good/O");
       tree->Branch("nPuppi", &npuppi, "nPuppi/s");
-      tree->Branch("pt", &pt, "pt[nPuppi]/s");
-      tree->Branch("eta", &eta, "eta[nPuppi]/S");
-      tree->Branch("phi", &phi, "phi[nPuppi]/S");
-      tree->Branch("pid", &pdgid, "pid[nPuppi]/b");
-      tree->Branch("z0", &z0, "z0[nPuppi]/S");
-      tree->Branch("dxy", &dxy, "dxy[nPuppi]/B");
-      tree->Branch("quality", &quality, "quality[nPuppi]/b");
-      tree->Branch("wpuppi", &wpuppi, "wpuppi[nPuppi]/s");
-      tree->Branch("id", &id, "id[nPuppi]/b");
+      tree->Branch("Puppi_pt", &pt, "Puppi_pt[nPuppi]/s");
+      tree->Branch("Puppi_eta", &eta, "Puppi_eta[nPuppi]/S");
+      tree->Branch("Puppi_phi", &phi, "Puppi_phi[nPuppi]/S");
+      tree->Branch("Puppi_pid", &pdgid, "Puppi_pid[nPuppi]/b");
+      tree->Branch("Puppi_z0", &z0, "Puppi_z0[nPuppi]/S");
+      tree->Branch("Puppi_dxy", &dxy, "Puppi_dxy[nPuppi]/B");
+      tree->Branch("quality", &quality, "Puppi_quality[nPuppi]/b");
+      tree->Branch("Puppi_wpuppi", &wpuppi, "Puppi_wpuppi[nPuppi]/s");
+      tree->Branch("Puppi_id", &id, "Puppi_id[nPuppi]/b");
     }
 
     timer.Start();
     while (fin.good()) {
-      readevent(fin, header, run, bx, orbit, npuppi, data, pt, eta, phi, pdgid, z0, dxy, quality, wpuppi, id);
+      readevent(fin, header, run, bx, orbit, good, npuppi, data, pt, eta, phi, pdgid, z0, dxy, quality, wpuppi, id);
       if (tree)
         tree->Fill();
       entries++;
@@ -111,6 +113,7 @@ int main(int argc, char **argv) {
     uint64_t header, data[255];
     uint16_t run, bx;
     uint32_t orbit;
+    Bool_t good;
     uint16_t npuppi, npuppi_c, npuppi_n;  // issues with uint8_t that root sees to max at 127
     //puppi candidate info:
     uint16_t pt_c[255], pt_n[255];
@@ -128,6 +131,7 @@ int main(int argc, char **argv) {
       tree->Branch("run", &run, "run/s");
       tree->Branch("orbit", &orbit, "orbit/i");
       tree->Branch("bx", &bx, "bx/s");
+      tree->Branch("good", &good, "good/O");
       tree->Branch("nPuppi", &npuppi, "nPuppi/s");
       //charged branches
       tree->Branch("nPuppi_c", &npuppi_c, "nPuppi_c/s");
@@ -155,6 +159,7 @@ int main(int argc, char **argv) {
                 run,
                 bx,
                 orbit,
+                good,
                 npuppi,
                 npuppi_c,
                 npuppi_n,
@@ -181,6 +186,7 @@ int main(int argc, char **argv) {
     uint64_t header, data[255];
     uint16_t run, bx;
     uint32_t orbit;
+    Bool_t good;
     uint8_t npuppi8;  // issues with uint8_t that root sees to max at 127
     uint16_t npuppi16;
     //puppi candidate info:
@@ -200,20 +206,21 @@ int main(int argc, char **argv) {
       tree->Branch("run", &run, "run/s");
       tree->Branch("orbit", &orbit, "orbit/i");
       tree->Branch("bx", &bx, "bx/s");
+      tree->Branch("good", &good, "good/O");
       tree->Branch("nPuppi", &npuppi16, "nPuppi/s");
-      tree->Branch("pt", &pt, ("pt[nPuppi]/" + F).c_str());
-      tree->Branch("eta", &eta, ("eta[nPuppi]/" + F).c_str());
-      tree->Branch("phi", &phi, ("phi[nPuppi]/" + F).c_str());
-      tree->Branch("pdgid", &pdgid, "pdgid[nPuppi]/b");
-      tree->Branch("z0", &z0, ("z0[nPuppi]/" + F).c_str());
-      tree->Branch("dxy", &dxy, ("dxy[nPuppi]/" + F).c_str());
-      tree->Branch("wpuppi", &wpuppi, ("wpuppi[nPuppi]/" + F).c_str());
-      tree->Branch("quality", &quality, "quality[nPuppi]/b");
+      tree->Branch("Puppi_pt", &pt, ("Puppi_pt[nPuppi]/" + F).c_str());
+      tree->Branch("Puppi_eta", &eta, ("Puppi_eta[nPuppi]/" + F).c_str());
+      tree->Branch("Puppi_phi", &phi, ("Puppi_phi[nPuppi]/" + F).c_str());
+      tree->Branch("Puppi_pdgid", &pdgid, "Puppi_pdgid[nPuppi]/b");
+      tree->Branch("Puppi_z0", &z0, ("Puppi_z0[nPuppi]/" + F).c_str());
+      tree->Branch("Puppi_dxy", &dxy, ("Puppi_dxy[nPuppi]/" + F).c_str());
+      tree->Branch("Puppi_wpuppi", &wpuppi, ("Puppi_wpuppi[nPuppi]/" + F).c_str());
+      tree->Branch("Puppi_quality", &quality, "Puppi_quality[nPuppi]/b");
     }
 
     timer.Start();
     while (fin.good()) {
-      readevent(fin, header, run, bx, orbit, npuppi8, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
+      readevent(fin, header, run, bx, orbit, good, npuppi8, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
       npuppi16 = npuppi8;
       if (tree)
         tree->Fill();
@@ -223,6 +230,7 @@ int main(int argc, char **argv) {
     uint64_t header, data[255];
     uint16_t run, bx;
     uint32_t orbit;
+    Bool_t good;
     uint16_t npuppi, npuppi_c, npuppi_n; 
     //puppi candidate info:
     float pt_c[255], pt_n[255], eta_c[255], eta_n[255], phi_c[255], phi_n[255];
@@ -240,6 +248,7 @@ int main(int argc, char **argv) {
       tree->Branch("run", &run, "run/s");
       tree->Branch("orbit", &orbit, "orbit/i");
       tree->Branch("bx", &bx, "bx/s");
+      tree->Branch("good", &good, "good/O");
       tree->Branch("nPuppi", &npuppi, "nPuppi/s");
       //charged branches
       tree->Branch("nPuppi_c", &npuppi_c, "nPuppi_c/s");
@@ -267,6 +276,7 @@ int main(int argc, char **argv) {
                 run,
                 bx,
                 orbit,
+                good, 
                 npuppi,
                 npuppi_c,
                 npuppi_n,
@@ -284,6 +294,33 @@ int main(int argc, char **argv) {
                 quality,
                 wpuppi,
                 id);
+      if (tree)
+        tree->Fill();
+      entries++;
+    }
+  } else if (type == "raw64" && method == "combined") {
+    uint64_t header, data[255];
+    uint16_t run, bx;
+    uint32_t orbit;
+    Bool_t good;
+    uint8_t npuppi8;  // issues with uint8_t that root sees to max at 127
+    uint16_t npuppi16;
+    //puppi candidate info:
+   if (tree) {
+      tree->Branch("run", &run, "run/s");
+      tree->Branch("orbit", &orbit, "orbit/i");
+      tree->Branch("bx", &bx, "bx/s");
+      tree->Branch("good", &good, "good/O");
+      tree->Branch("nPuppi", &npuppi16, "nPuppi/s");
+      tree->Branch("Puppi_packed", &data, "Puppi_packed[nPuppi]/l");
+    }
+
+    timer.Start();
+    while (fin.good()) {
+      readheader(fin, header, run, bx, orbit, good, npuppi8);
+      if (npuppi8)
+        fin.read(reinterpret_cast<char *>(data), npuppi8 * sizeof(uint64_t));
+      npuppi16 = npuppi8;
       if (tree)
         tree->Fill();
       entries++;

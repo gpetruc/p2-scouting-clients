@@ -4,6 +4,8 @@
 #include <TROOT.h>
 #include <ROOT/RNTuple.hxx>
 #include <ROOT/RNTupleModel.hxx>
+#include <ROOT/RNTupleUtil.hxx>
+#include <ROOT/RLogger.hxx>
 #include <TStopwatch.h>
 #include <string>
 #include "unpack.h"
@@ -19,6 +21,7 @@ int main(int argc, char **argv) {
   if (argc < 3) {
     return 1;
   }
+  auto verbosity = ROOT::Experimental::RLogScopedVerbosity(ROOT::Experimental::NTupleLog(),  ROOT::Experimental::ELogLevel::kError);
   int iarg = 1, narg = argc - 1;
   if (std::string(argv[iarg]) == "-j") {
     ROOT::EnableImplicitMT(std::stoi(argv[iarg + 1]));
@@ -65,15 +68,16 @@ int main(int argc, char **argv) {
     auto p_run = model->MakeField<uint16_t>("run");
     auto p_orbit = model->MakeField<uint32_t>("orbit");
     auto p_bx = model->MakeField<uint16_t>("bx");
+    auto p_good = model->MakeField<bool>("good");
     auto p_npuppi = model->MakeField<uint8_t>("nPuppi");
-    auto p_pt = model->MakeField<std::vector<float>>("pt");
-    auto p_eta = model->MakeField<std::vector<float>>("eta");
-    auto p_phi = model->MakeField<std::vector<float>>("phi");
-    auto p_pdgid = model->MakeField<std::vector<short int>>("pdgid");
-    auto p_z0 = model->MakeField<std::vector<float>>("z0");
-    auto p_dxy = model->MakeField<std::vector<float>>("dxy");
-    auto p_wpuppi = model->MakeField<std::vector<float>>("wpuppi");
-    auto p_quality = model->MakeField<std::vector<uint8_t>>("quality");
+    auto p_pt = model->MakeField<std::vector<float>>("Puppi_pt");
+    auto p_eta = model->MakeField<std::vector<float>>("Puppi_eta");
+    auto p_phi = model->MakeField<std::vector<float>>("Puppi_phi");
+    auto p_pdgid = model->MakeField<std::vector<short int>>("Puppi_pdgid");
+    auto p_z0 = model->MakeField<std::vector<float>>("Puppi_z0");
+    auto p_dxy = model->MakeField<std::vector<float>>("Puppi_dxy");
+    auto p_wpuppi = model->MakeField<std::vector<float>>("Puppi_wpuppi");
+    auto p_quality = model->MakeField<std::vector<uint8_t>>("Puppi_quality");
 
     std::unique_ptr<ROOT::Experimental::RNTupleWriter> writer;
     if (foutname) {
@@ -83,7 +87,7 @@ int main(int argc, char **argv) {
     }
     timer.Start();
     while (fin.good()) {
-      readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_npuppi);
+      readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good,*p_npuppi);
       unsigned int npuppi = *p_npuppi;
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&data[0]), npuppi * sizeof(uint64_t));
@@ -127,6 +131,7 @@ int main(int argc, char **argv) {
     auto p_run = model->MakeField<uint16_t>("run");
     auto p_orbit = model->MakeField<uint32_t>("orbit");
     auto p_bx = model->MakeField<uint16_t>("bx");
+    auto p_good = model->MakeField<bool>("good");
     auto c_puppi = model->MakeCollection("Puppi", std::move(submodel));
 
     std::unique_ptr<ROOT::Experimental::RNTupleWriter> writer;
@@ -138,7 +143,7 @@ int main(int argc, char **argv) {
     uint16_t npuppi;
     timer.Start();
     while (fin.good()) {
-      readheader(fin, header, *p_run, *p_bx, *p_orbit, npuppi);
+      readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&data[0]), npuppi * sizeof(uint64_t));
       for (unsigned int i = 0, n = npuppi; i < n; ++i) {
@@ -161,11 +166,11 @@ int main(int argc, char **argv) {
   } else if (type == "float" && method == "combined_struct") {
     uint64_t header, data[255];
 
-
     auto model = ROOT::Experimental::RNTupleModel::Create();
     auto p_run = model->MakeField<uint16_t>("run");
     auto p_orbit = model->MakeField<uint32_t>("orbit");
     auto p_bx = model->MakeField<uint16_t>("bx");
+    auto p_good = model->MakeField<bool>("good");
     auto p_puppi = model->MakeField<std::vector<Puppi>>("Puppi");
 
     std::unique_ptr<ROOT::Experimental::RNTupleWriter> writer;
@@ -177,7 +182,7 @@ int main(int argc, char **argv) {
     uint16_t npuppi;
     timer.Start();
     while (fin.good()) {
-      readheader(fin, header, *p_run, *p_bx, *p_orbit, npuppi);
+      readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&data[0]), npuppi * sizeof(uint64_t));
       p_puppi->resize(npuppi);
@@ -198,7 +203,34 @@ int main(int argc, char **argv) {
         writer->Fill();
       entries++;
     }
-  } else{
+  } else if (type == "raw64") {
+    auto model = ROOT::Experimental::RNTupleModel::Create();
+    auto p_run = model->MakeField<uint16_t>("run");
+    auto p_orbit = model->MakeField<uint32_t>("orbit");
+    auto p_bx = model->MakeField<uint16_t>("bx");
+    auto p_good = model->MakeField<bool>("good");
+    auto p_puppi = model->MakeField<std::vector<uint64_t>>("Puppi");
+    uint16_t npuppi;
+    uint64_t header;
+
+    std::unique_ptr<ROOT::Experimental::RNTupleWriter> writer;
+    if (foutname) {
+      ROOT::Experimental::RNTupleWriteOptions options;
+      options.SetCompression(compression);
+      writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", foutname, options);
+    }
+    timer.Start();
+    while (fin.good()) {
+      readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
+      p_puppi->resize(npuppi);
+      if (npuppi)
+        fin.read(reinterpret_cast<char *>(&*p_puppi->begin()), npuppi * sizeof(uint64_t));
+
+      if (writer)
+        writer->Fill();
+      entries++;
+    }
+  } else {
     usage();
     return 4;
   }

@@ -30,6 +30,7 @@ void run_ipc(std::fstream &fin,
   uint16_t run, bx;
   uint32_t orbit;
   uint8_t npuppi;
+  bool good;
   //puppi candidate info:
   float pt[255];
   float eta[255], phi[255];
@@ -45,6 +46,7 @@ void run_ipc(std::fstream &fin,
   auto f_run = arrow::field("run", arrow::uint16());
   auto f_orbit = arrow::field("orbit", arrow::uint32());
   auto f_bx = arrow::field("bx", arrow::uint16());
+  auto f_good = arrow::field("good", arrow::boolean());
 
   auto f_pt = arrow::field("pt", t_float);
   auto f_eta = arrow::field("eta", t_float);
@@ -58,11 +60,12 @@ void run_ipc(std::fstream &fin,
   auto t_puppi = arrow::struct_({f_pt, f_eta, f_phi, f_z0, f_dxy, f_wpuppi, f_pdgid, f_quality});
   auto f_puppi = arrow::field("Puppi", arrow::list(t_puppi));
 
-  auto schema = arrow::schema({f_run, f_orbit, f_bx, f_puppi});
+  auto schema = arrow::schema({f_run, f_orbit, f_bx, f_good, f_puppi});
 
   auto b_run = std::make_shared<arrow::UInt16Builder>();
   auto b_orbit = std::make_shared<arrow::UInt32Builder>();
   auto b_bx = std::make_shared<arrow::UInt16Builder>();
+  auto b_good = std::make_shared<arrow::BooleanBuilder>();
   auto b_pt_i = std::make_shared<FltBuilderType>();
   auto b_eta_i = std::make_shared<FltBuilderType>();
   auto b_phi_i = std::make_shared<FltBuilderType>();
@@ -81,10 +84,11 @@ void run_ipc(std::fstream &fin,
     batch_writer = *arrow::ipc::MakeFileWriter(output_file, schema, options);
 
   while (fin.good()) {
-    readevent(fin, header, run, bx, orbit, npuppi, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
+    readevent(fin, header, run, bx, orbit, good, npuppi, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
     b_run->Append(run);
     b_orbit->Append(orbit);
     b_bx->Append(bx);
+    b_good->Append(good);
     b_puppi.Append();
     b_puppi_i->AppendValues(npuppi, nullptr);
     b_pt_i->AppendValues(pt, pt + npuppi);
@@ -101,9 +105,10 @@ void run_ipc(std::fstream &fin,
       auto a_run = b_run->Finish();
       auto a_orbit = b_orbit->Finish();
       auto a_bx = b_bx->Finish();
+      auto a_good = b_good->Finish();
       auto a_puppi = b_puppi.Finish();
       std::shared_ptr<arrow::RecordBatch> batch =
-          arrow::RecordBatch::Make(schema, thisentries, {*a_run, *a_orbit, *a_bx, *a_puppi});
+          arrow::RecordBatch::Make(schema, thisentries, {*a_run, *a_orbit, *a_bx, *a_good, *a_puppi});
       batch_writer->WriteRecordBatch(*batch);
       thisentries = 0;
       nbatches++;
@@ -131,14 +136,14 @@ void run_ipc_bulk(std::fstream &fin,
   std::vector<float> pt, eta, phi, z0, dxy, wpuppi;
   std::vector<int16_t> pdgid;
   std::vector<uint8_t> quality;
-  unsigned int guess_cands = 60 * batchsize;
-  //for (auto & v : { pt, eta, phi, y0, dxy, wpuppi}) v.reserve(guess_ncands);
-  //pdgid.reserve(guess_ncands);
-  //quality.reserve(guess_ncands);
 
   auto f_run = arrow::field("run", arrow::uint16());
   auto f_orbit = arrow::field("orbit", arrow::uint32());
   auto f_bx = arrow::field("bx", arrow::uint16());
+  auto f_good = arrow::field("good", arrow::boolean());
+
+  // std::vector<bool> is tricky, so we just use a plain builder for this
+  auto b_good = std::make_shared<arrow::BooleanBuilder>();
 
   auto f_pt = arrow::field("pt", t_float);
   auto f_eta = arrow::field("eta", t_float);
@@ -153,7 +158,7 @@ void run_ipc_bulk(std::fstream &fin,
   auto t_puppis = arrow::list(t_puppi);
   auto f_puppi = arrow::field("Puppi", t_puppis);
 
-  auto schema = arrow::schema({f_run, f_orbit, f_bx, f_puppi});
+  auto schema = arrow::schema({f_run, f_orbit, f_bx, f_good, f_puppi});
 
 
   std::shared_ptr<arrow::ipc::RecordBatchWriter> batch_writer;
@@ -164,15 +169,18 @@ void run_ipc_bulk(std::fstream &fin,
   std::vector<int> offsets(1,0);
   unsigned int npuppitot = 0, capacity = batchsize;
   data.resize(capacity);
+  bool good;
   while (fin.good()) {
-    readheader(fin, header[e], run[e], bx[e], orbit[e], npuppi[e]);
+    readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
+    b_good->Append(good);
     unsigned int lastvalid = offsets.back();
     offsets.emplace_back(offsets.back()+npuppi[e]);
     if (unsigned(offsets.back()) >= capacity) {;
       capacity = std::max<unsigned int>(offsets.back(), 2*capacity);
       data.resize(capacity);
     }
-    fin.read(reinterpret_cast<char *>(&data[lastvalid]), npuppi[e]*sizeof(uint64_t));
+    if (npuppi[e])
+      fin.read(reinterpret_cast<char *>(&data[lastvalid]), npuppi[e] * sizeof(uint64_t));
     e++; entries++;
     if (e == batchsize || !fin.good()) {
       unsigned int nallpuppi = offsets.back();
@@ -189,9 +197,10 @@ void run_ipc_bulk(std::fstream &fin,
             z0[i] = 0; dxy[i] = 0;
         }
       }
-      std::shared_ptr<arrow::Array> a_run(new arrow::Int16Array(e, arrow::Buffer::Wrap(run)));
-      std::shared_ptr<arrow::Array> a_orbit(new arrow::Int32Array(e, arrow::Buffer::Wrap(orbit)));
-      std::shared_ptr<arrow::Array> a_bx(new arrow::Int16Array(e, arrow::Buffer::Wrap(bx)));
+      std::shared_ptr<arrow::Array> a_run(new arrow::UInt16Array(e, arrow::Buffer::Wrap(run)));
+      std::shared_ptr<arrow::Array> a_orbit(new arrow::UInt32Array(e, arrow::Buffer::Wrap(orbit)));
+      std::shared_ptr<arrow::Array> a_bx(new arrow::UInt16Array(e, arrow::Buffer::Wrap(bx)));
+      auto a_good = b_good->Finish();
       std::shared_ptr<arrow::Array> a_pt(new FltArrayType(nallpuppi, arrow::Buffer::Wrap(pt)));
       std::shared_ptr<arrow::Array> a_eta(new FltArrayType(nallpuppi, arrow::Buffer::Wrap(eta)));
       std::shared_ptr<arrow::Array> a_phi(new FltArrayType(nallpuppi, arrow::Buffer::Wrap(phi)));
@@ -204,13 +213,191 @@ void run_ipc_bulk(std::fstream &fin,
       std::shared_ptr<arrow::Array> a_puppi(new arrow::ListArray(t_puppis, e, arrow::Buffer::Wrap(offsets), a_flat_puppi));
       if (output_file) {
         std::shared_ptr<arrow::RecordBatch> batch =
-            arrow::RecordBatch::Make(schema, e, {a_run, a_orbit, a_bx, a_puppi});
+            arrow::RecordBatch::Make(schema, e, {a_run, a_orbit, a_bx, *a_good, a_puppi});
         batch_writer->WriteRecordBatch(*batch);
       }
       e = 0;
-      data.clear();
       offsets.resize(1);
       nbatches++;
+      b_good->Reset();
+    }
+  }
+  if (output_file)
+    batch_writer->Close();
+}
+
+void run_ipc_int_bulk(std::fstream &fin,
+             unsigned long &entries,
+             unsigned long &nbatches,
+             unsigned long batchsize,
+             std::shared_ptr<arrow::io::FileOutputStream> &output_file,
+             const arrow::ipc::IpcWriteOptions &options) {
+  assert(batchsize != 0);
+  std::vector<uint64_t> header(batchsize), data;
+  std::vector<uint16_t> run(batchsize), bx(batchsize);
+  std::vector<uint32_t> orbit(batchsize);
+  std::vector<uint8_t> npuppi(batchsize);
+
+  //puppi candidate info:
+  std::vector<uint16_t> pt, wpuppi;
+  std::vector<int8_t> dxy;
+  std::vector<int16_t> pdgid, eta, phi, z0;
+  std::vector<uint8_t> quality;
+
+  auto f_run = arrow::field("run", arrow::uint16());
+  auto f_orbit = arrow::field("orbit", arrow::uint32());
+  auto f_bx = arrow::field("bx", arrow::uint16());
+  auto f_good = arrow::field("good", arrow::boolean());
+
+  // std::vector<bool> is tricky, so we just use a plain builder for this
+  auto b_good = std::make_shared<arrow::BooleanBuilder>();
+
+  auto f_pt = arrow::field("pt", arrow::uint16());
+  auto f_eta = arrow::field("eta", arrow::int16());
+  auto f_phi = arrow::field("phi", arrow::int16());
+  auto f_z0 = arrow::field("z0", arrow::int16());
+  auto f_dxy = arrow::field("dxy", arrow::int8());
+  auto f_wpuppi = arrow::field("wpuppi", arrow::uint16());
+  auto f_pdgid = arrow::field("pdgid", arrow::int16());
+  auto f_quality = arrow::field("quality", arrow::uint8());
+
+  auto t_puppi = arrow::struct_({f_pt, f_eta, f_phi, f_z0, f_dxy, f_wpuppi, f_pdgid, f_quality});
+  auto t_puppis = arrow::list(t_puppi);
+  auto f_puppi = arrow::field("Puppi", t_puppis);
+
+  auto schema = arrow::schema({f_run, f_orbit, f_bx, f_good, f_puppi});
+
+  std::shared_ptr<arrow::ipc::RecordBatchWriter> batch_writer;
+  if (output_file)
+    batch_writer = *arrow::ipc::MakeFileWriter(output_file, schema, options);
+
+  unsigned int e = 0;
+  std::vector<int> offsets(1,0);
+  unsigned int npuppitot = 0, capacity = batchsize;
+  data.resize(capacity);
+  bool good;
+  while (fin.good()) {
+    readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
+    b_good->Append(good);
+    unsigned int lastvalid = offsets.back();
+    offsets.emplace_back(offsets.back()+npuppi[e]);
+    if (unsigned(offsets.back()) >= capacity) {;
+      capacity = std::max<unsigned int>(offsets.back(), 2*capacity);
+      data.resize(capacity);
+    }
+    if (npuppi[e])
+      fin.read(reinterpret_cast<char *>(&data[lastvalid]), npuppi[e] * sizeof(uint64_t));
+    e++; entries++;
+    if (e == batchsize || !fin.good()) {
+      unsigned int nallpuppi = offsets.back();
+      for (std::vector<uint16_t> * v : {&pt, &wpuppi}) v->resize(nallpuppi);
+      for (std::vector<int16_t> * v : {&eta, &phi, &z0, &pdgid}) v->resize(nallpuppi);
+      dxy.resize(nallpuppi); 
+      quality.resize(nallpuppi);
+      for (unsigned int i = 0; i < nallpuppi; ++i)  {
+        readshared(data[i], pt[i], eta[i], phi[i]);
+        if (readpid(data[i], pdgid[i])) {
+            readcharged(data[i], z0[i], dxy[i], quality[i]);
+            wpuppi[i] = 0;
+        } else {
+            readneutral(data[i], wpuppi[i], quality[i]);
+            z0[i] = 0; dxy[i] = 0;
+        }
+      }
+      std::shared_ptr<arrow::Array> a_run(new arrow::UInt16Array(e, arrow::Buffer::Wrap(run)));
+      std::shared_ptr<arrow::Array> a_orbit(new arrow::UInt32Array(e, arrow::Buffer::Wrap(orbit)));
+      std::shared_ptr<arrow::Array> a_bx(new arrow::UInt16Array(e, arrow::Buffer::Wrap(bx)));
+      auto a_good = b_good->Finish();
+      std::shared_ptr<arrow::Array> a_pt(new arrow::UInt16Array(nallpuppi, arrow::Buffer::Wrap(pt)));
+      std::shared_ptr<arrow::Array> a_eta(new arrow::Int16Array(nallpuppi, arrow::Buffer::Wrap(eta)));
+      std::shared_ptr<arrow::Array> a_phi(new arrow::Int16Array(nallpuppi, arrow::Buffer::Wrap(phi)));
+      std::shared_ptr<arrow::Array> a_dxy(new arrow::Int16Array(nallpuppi, arrow::Buffer::Wrap(dxy)));
+      std::shared_ptr<arrow::Array> a_z0(new arrow::Int8Array(nallpuppi, arrow::Buffer::Wrap(z0)));
+      std::shared_ptr<arrow::Array> a_wpuppi(new arrow::UInt16Array(nallpuppi, arrow::Buffer::Wrap(wpuppi)));
+      std::shared_ptr<arrow::Array> a_pdgid(new arrow::Int16Array(nallpuppi, arrow::Buffer::Wrap(pdgid)));
+      std::shared_ptr<arrow::Array> a_quality(new arrow::UInt8Array(nallpuppi, arrow::Buffer::Wrap(quality)));
+      std::shared_ptr<arrow::Array> a_flat_puppi(new arrow::StructArray(t_puppi, nallpuppi, {a_pt,a_eta,a_phi,a_z0,a_dxy,a_wpuppi,a_pdgid,a_quality}));
+      std::shared_ptr<arrow::Array> a_puppi(new arrow::ListArray(t_puppis, e, arrow::Buffer::Wrap(offsets), a_flat_puppi));
+      if (output_file) {
+        std::shared_ptr<arrow::RecordBatch> batch =
+            arrow::RecordBatch::Make(schema, e, {a_run, a_orbit, a_bx, *a_good,a_puppi});
+        batch_writer->WriteRecordBatch(*batch);
+      }
+      e = 0;
+      offsets.resize(1);
+      nbatches++;
+      b_good->Reset();
+    }
+  }
+  if (output_file)
+    batch_writer->Close();
+}
+
+void run_ipc_raw64_bulk(std::fstream &fin,
+             unsigned long &entries,
+             unsigned long &nbatches,
+             unsigned long batchsize,
+             std::shared_ptr<arrow::io::FileOutputStream> &output_file,
+             const arrow::ipc::IpcWriteOptions &options) {
+  assert(batchsize != 0);
+  std::vector<uint64_t> header(batchsize), data;
+  std::vector<uint16_t> run(batchsize), bx(batchsize);
+  std::vector<uint32_t> orbit(batchsize);
+  std::vector<uint8_t> npuppi(batchsize);
+
+  auto f_run = arrow::field("run", arrow::uint16());
+  auto f_orbit = arrow::field("orbit", arrow::uint32());
+  auto f_bx = arrow::field("bx", arrow::uint16());
+  auto f_good = arrow::field("good", arrow::boolean());
+
+  // std::vector<bool> is tricky, so we just use a plain builder for this
+  auto b_good = std::make_shared<arrow::BooleanBuilder>();
+
+  auto f_data = arrow::field("packed", arrow::uint64());
+  
+  auto t_puppis = arrow::list(f_data);
+  auto f_puppi = arrow::field("Puppi", t_puppis);
+
+  auto schema = arrow::schema({f_run, f_orbit, f_bx, f_good, f_puppi});
+
+  std::shared_ptr<arrow::ipc::RecordBatchWriter> batch_writer;
+  if (output_file)
+    batch_writer = *arrow::ipc::MakeFileWriter(output_file, schema, options);
+
+  unsigned int e = 0;
+  std::vector<int> offsets(1,0);
+  unsigned int npuppitot = 0, capacity = batchsize;
+  data.resize(capacity);
+  bool good;
+  while (fin.good()) {
+    readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
+    b_good->Append(good);
+    unsigned int lastvalid = offsets.back();
+    offsets.emplace_back(offsets.back()+npuppi[e]);
+    if (unsigned(offsets.back()) >= capacity) {;
+      capacity = std::max<unsigned int>(offsets.back(), 2*capacity);
+      data.resize(capacity);
+    }
+    if (npuppi[e])
+      fin.read(reinterpret_cast<char *>(&data[lastvalid]), npuppi[e]*sizeof(uint64_t));
+    e++; entries++;
+    if (e == batchsize || !fin.good()) {
+      unsigned int nallpuppi = offsets.back();
+      std::shared_ptr<arrow::Array> a_run(new arrow::UInt16Array(e, arrow::Buffer::Wrap(run)));
+      std::shared_ptr<arrow::Array> a_orbit(new arrow::UInt32Array(e, arrow::Buffer::Wrap(orbit)));
+      std::shared_ptr<arrow::Array> a_bx(new arrow::UInt16Array(e, arrow::Buffer::Wrap(bx)));
+      auto a_good = b_good->Finish();
+      std::shared_ptr<arrow::Array> a_packed(new arrow::UInt64Array(nallpuppi, arrow::Buffer::Wrap(data)));
+      std::shared_ptr<arrow::Array> a_puppi(new arrow::ListArray(t_puppis, e, arrow::Buffer::Wrap(offsets), a_packed));
+      if (output_file) {
+        std::shared_ptr<arrow::RecordBatch> batch =
+            arrow::RecordBatch::Make(schema, e, {a_run, a_orbit, a_bx, *a_good, a_puppi});
+        batch_writer->WriteRecordBatch(*batch);
+      }
+      e = 0;
+      offsets.resize(1);
+      nbatches++;
+      b_good->Reset();
     }
   }
   if (output_file)
@@ -219,7 +406,7 @@ void run_ipc_bulk(std::fstream &fin,
 
 void usage() {
   printf("Usage: example.exe [options] <layout> infile.dump [ outfile.arrow [ compression level ] ]\n");
-  printf("   layout := ipc_float | ipc_float16 | ipc_float_bulk \n");
+  printf("   layout := ipc_float | ipc_float16 | ipc_float_bulk | ipc_int_bulk | ipc_raw64_bulk \n");
   printf("   compression := lz4 | zstd\n");
   printf("Options:\n");
   printf("  -b, --batchsize N: number of BXs per batch, default is 3564, one orbit at TM1 \n");
@@ -305,6 +492,12 @@ int main(int argc, char **argv) {
     run_ipc<arrow::FloatType>(fin, entries, nbatches, batchsize, arrow::float32(), output_file, ipcWriteOptions);
   } else if (layout == "ipc_float_bulk") {
     run_ipc_bulk<arrow::FloatType>(fin, entries, nbatches, batchsize, arrow::float32(), output_file, ipcWriteOptions);
+  } else if (layout == "ipc_float16_bulk") {
+    run_ipc_bulk<arrow::HalfFloatType>(fin, entries, nbatches, batchsize, arrow::float16(), output_file, ipcWriteOptions);
+  } else if (layout == "ipc_int_bulk") {
+    run_ipc_int_bulk(fin, entries, nbatches, batchsize, output_file, ipcWriteOptions);
+  } else if (layout == "ipc_raw64_bulk") {
+    run_ipc_raw64_bulk(fin, entries, nbatches, batchsize, output_file, ipcWriteOptions);
   } else if (layout == "ipc_float16") {
     run_ipc<arrow::HalfFloatType>(fin, entries, nbatches, batchsize, arrow::float16(), output_file, ipcWriteOptions);
   }
