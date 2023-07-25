@@ -2,12 +2,17 @@ CC = c++
 CCFLAGS = --std=c++17 -march=native -W -Wall  -O3
 LIBS = -lstdc++ -lpthread
 
-.PHONY: clean run_tests
+.PHONY: clean format run_tests
 
 all: data_checker.exe 
 
 %.exe : %.cc
 	$(CC) $(CCFLAGS) $(LIBS) $< -o $@
+
+format:
+	clang-format -i data_checker.cc
+	@cd apache && make format
+	@cd root && make format
 
 clean:
 	@rm *.exe

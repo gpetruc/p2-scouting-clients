@@ -4,14 +4,14 @@
 
 struct Puppi {
   float pt, eta, phi, z0, dxy, wpuppi;
-  short int pdgid;
+  short int pid;
   uint8_t quality;
 };
 struct PuppiInt {
   uint16_t pt;
   int16_t eta, phi, z0;
   int8_t dxy;
-  short int pdgid;
+  short int pid;
   uint8_t wpuppi, quality;
 };
 

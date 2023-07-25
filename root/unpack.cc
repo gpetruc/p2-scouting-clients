@@ -97,7 +97,7 @@ int main(int argc, char **argv) {
       tree->Branch("Puppi_pid", &pdgid, "Puppi_pid[nPuppi]/b");
       tree->Branch("Puppi_z0", &z0, "Puppi_z0[nPuppi]/S");
       tree->Branch("Puppi_dxy", &dxy, "Puppi_dxy[nPuppi]/B");
-      tree->Branch("quality", &quality, "Puppi_quality[nPuppi]/b");
+      tree->Branch("Puppi_quality", &quality, "Puppi_quality[nPuppi]/b");
       tree->Branch("Puppi_wpuppi", &wpuppi, "Puppi_wpuppi[nPuppi]/s");
       tree->Branch("Puppi_id", &id, "Puppi_id[nPuppi]/b");
     }
@@ -134,22 +134,22 @@ int main(int argc, char **argv) {
       tree->Branch("good", &good, "good/O");
       tree->Branch("nPuppi", &npuppi, "nPuppi/s");
       //charged branches
-      tree->Branch("nPuppi_c", &npuppi_c, "nPuppi_c/s");
-      tree->Branch("pt_c", &pt_c, "pt_c[nPuppi_c]/s");
-      tree->Branch("eta_c", &eta_c, "eta_c[nPuppi_c]/S");
-      tree->Branch("phi_c", &phi_c, "phi_c[nPuppi_c]/S");
-      tree->Branch("pid_c", &pdgid_c, "pid_c[nPuppi_c]/b");
-      tree->Branch("z0", &z0, "z0[nPuppi_c]/S");
-      tree->Branch("dxy", &dxy, "dxy[nPuppi_c]/B");
-      tree->Branch("quality", &quality, "quality[nPuppi]/b");
+      tree->Branch("nPuppiCharged", &npuppi_c, "nPuppiCharged/s");
+      tree->Branch("PuppiCharged_pt", &pt_c, "pt_c[nPuppiCharged]/s");
+      tree->Branch("PuppiCharged_eta", &eta_c, "eta_c[nPuppiCharged]/S");
+      tree->Branch("PuppiCharged_phi", &phi_c, "phi_c[nPuppiCharged]/S");
+      tree->Branch("PuppiCharged_pid", &pdgid_c, "PuppiCharged_pid[nPuppiCharged]/b");
+      tree->Branch("PuppiCharged_z0", &z0, "PuppiCharged_z0[nPuppiCharged]/S");
+      tree->Branch("PuppiCharged_dxy", &dxy, "PuppiCharged_dxy[nPuppiCharged]/B");
+      tree->Branch("PuppiCharged_quality", &quality, "PuppiCharged_quality[nPuppi]/b");
       //neutral branches
-      tree->Branch("nPuppi_n", &npuppi_n, "nPuppi_n/s");
-      tree->Branch("pt_n", &pt_n, "pt_n[nPuppi_n]/s");
-      tree->Branch("eta_n", &eta_n, "eta_n[nPuppi_n]/S");
-      tree->Branch("phi_n", &phi_n, "phi_n[nPuppi_c]/S");
-      tree->Branch("pid_n", &pdgid_n, "pid_n[nPuppi_n]/b");
-      tree->Branch("wpuppi", &wpuppi, "wpuppi[nPuppi_n]/s");
-      tree->Branch("id", &id, "id[nPuppi]/b");
+      tree->Branch("nPuppiNeutral", &npuppi_n, "nPuppiNeutral/s");
+      tree->Branch("PuppiNeutral_pt", &pt_n, "PuppiNeutral_pt[nPuppiNeutral]/s");
+      tree->Branch("PuppiNeutral_eta", &eta_n, "PuppiNeutral_eta[nPuppiNeutral]/S");
+      tree->Branch("PuppiNeutral_phi", &phi_n, "PuppiNeutral_phi[nPuppiCharged]/S");
+      tree->Branch("PuppiNeutral_pid", &pdgid_n, "PuppiNeutral_pid[nPuppiNeutral]/b");
+      tree->Branch("PuppiNeutral_wpuppi", &wpuppi, "PuppiNeutral_wpuppi[nPuppiNeutral]/s");
+      tree->Branch("PuppiNeutral_id", &id, "PuppiNeutral_id[nPuppi]/b");
     }
 
     timer.Start();
@@ -211,7 +211,7 @@ int main(int argc, char **argv) {
       tree->Branch("Puppi_pt", &pt, ("Puppi_pt[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_eta", &eta, ("Puppi_eta[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_phi", &phi, ("Puppi_phi[nPuppi]/" + F).c_str());
-      tree->Branch("Puppi_pdgid", &pdgid, "Puppi_pdgid[nPuppi]/b");
+      tree->Branch("Puppi_pid", &pdgid, "Puppi_pid[nPuppi]/b");
       tree->Branch("Puppi_z0", &z0, ("Puppi_z0[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_dxy", &dxy, ("Puppi_dxy[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_wpuppi", &wpuppi, ("Puppi_wpuppi[nPuppi]/" + F).c_str());
@@ -251,22 +251,22 @@ int main(int argc, char **argv) {
       tree->Branch("good", &good, "good/O");
       tree->Branch("nPuppi", &npuppi, "nPuppi/s");
       //charged branches
-      tree->Branch("nPuppi_c", &npuppi_c, "nPuppi_c/s");
-      tree->Branch("pt_c", &pt_c, ("pt_c[nPuppi_c]/" + F).c_str());
-      tree->Branch("eta_c", &eta_c, ("eta_c[nPuppi_c]/" + F).c_str());
-      tree->Branch("phi_c", &phi_c, ("phi_c[nPuppi_c]/" + F).c_str());
-      tree->Branch("pdgid_c", &pdgid_c, "pdgid_c[nPuppi_c]/b");
-      tree->Branch("quality", &quality, "quality[nPuppi_c]/b");
-      tree->Branch("z0", &z0, ("z0[nPuppi_c]/" + F).c_str());
-      tree->Branch("dxy", &dxy, ("dxy[nPuppi_c]/" + F).c_str());
+      tree->Branch("nPuppiCharged", &npuppi_c, "nPuppiCharged/s");
+      tree->Branch("PuppiCharged_pt", &pt_c, ("PuppiCharged_pt[nPuppiCharged]/" + F).c_str());
+      tree->Branch("PuppiCharged_eta", &eta_c, ("PuppiCharged_eta[nPuppiCharged]/" + F).c_str());
+      tree->Branch("PuppiCharged_phi", &phi_c, ("PuppiCharged_phi[nPuppiCharged]/" + F).c_str());
+      tree->Branch("PuppiCharged_pid", &pdgid_c, "PuppiCharged_pid[nPuppiCharged]/b");
+      tree->Branch("PuppiCharged_quality", &quality, "PuppiCharged_quality[nPuppiCharged]/b");
+      tree->Branch("PuppiCharged_z0", &z0, ("PuppiCharged_z0[nPuppiCharged]/" + F).c_str());
+      tree->Branch("PuppiCharged_dxy", &dxy, ("PuppiCharged_dxy[nPuppiCharged]/" + F).c_str());
       //neutral branches
-      tree->Branch("nPuppi_n", &npuppi_n, "nPuppi_n/s");
-      tree->Branch("pt_n", &pt_n, ("pt_n[nPuppi_n]/" + F).c_str());
-      tree->Branch("eta_n", &eta_n, ("eta_n[nPuppi_n]/" + F).c_str());
-      tree->Branch("phi_n", &phi_n, ("phi_n[nPuppi_n]/" + F).c_str());
-      tree->Branch("pdgid_n", &pdgid_n, "pdgid_n[nPuppi_n]/b");
-      tree->Branch("wpuppi", &wpuppi, ("wpuppi[nPuppi_n]/" + F).c_str());
-      tree->Branch("id", &id, "id[nPuppi_n]/b");
+      tree->Branch("nPuppiNeutral", &npuppi_n, "nPuppiNeutral/s");
+      tree->Branch("PuppiNeutral_pt", &pt_n, ("PuppiNeutral_pt[nPuppiNeutral]/" + F).c_str());
+      tree->Branch("PuppiNeutral_eta", &eta_n, ("PuppiNeutral_eta[nPuppiNeutral]/" + F).c_str());
+      tree->Branch("PuppiNeutral_phi", &phi_n, ("PuppiNeutral_phi[nPuppiNeutral]/" + F).c_str());
+      tree->Branch("PuppiNeutral_pid", &pdgid_n, "PuppiNeutral_pid[nPuppiNeutral]/b");
+      tree->Branch("PuppiNeutral_wpuppi", &wpuppi, ("PuppiNeutral_wpuppi[nPuppiNeutral]/" + F).c_str());
+      tree->Branch("PuppiNeutral_id", &id, "PuppiNeutral_id[nPuppiNeutral]/b");
     }
 
     timer.Start();

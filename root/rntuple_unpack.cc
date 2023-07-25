@@ -74,7 +74,7 @@ int main(int argc, char **argv) {
     auto p_pt = model->MakeField<std::vector<float>>("Puppi_pt");
     auto p_eta = model->MakeField<std::vector<float>>("Puppi_eta");
     auto p_phi = model->MakeField<std::vector<float>>("Puppi_phi");
-    auto p_pdgid = model->MakeField<std::vector<short int>>("Puppi_pdgid");
+    auto p_pdgid = model->MakeField<std::vector<short int>>("Puppi_pid");
     auto p_z0 = model->MakeField<std::vector<float>>("Puppi_z0");
     auto p_dxy = model->MakeField<std::vector<float>>("Puppi_dxy");
     auto p_wpuppi = model->MakeField<std::vector<float>>("Puppi_wpuppi");
@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
     auto p_pt = submodel->MakeField<float>("pt");
     auto p_eta = submodel->MakeField<float>("eta");
     auto p_phi = submodel->MakeField<float>("phi");
-    auto p_pdgid = submodel->MakeField<short int>("pdgid");
+    auto p_pdgid = submodel->MakeField<short int>("pid");
     auto p_z0 = submodel->MakeField<float>("z0");
     auto p_dxy = submodel->MakeField<float>("dxy");
     auto p_wpuppi = submodel->MakeField<float>("wpuppi");
@@ -190,7 +190,7 @@ int main(int argc, char **argv) {
       for (unsigned int i = 0, n = npuppi; i < n; ++i) {
         Puppi pup;
         readshared(data[i], pup.pt, pup.eta, pup.phi);
-        if (readpid(data[i], pup.pdgid)) {
+        if (readpid(data[i], pup.pid)) {
           readcharged(data[i], pup.z0, pup.dxy, pup.quality);
           pup.wpuppi = 0;
         } else {

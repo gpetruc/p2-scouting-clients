@@ -3,7 +3,7 @@ CCFLAGS = --std=c++17 -W -Wall -Wno-unused-variable -Ofast -march=native   $(she
 LIBS = -lstdc++ $(shell root-config --ldflags --libs) -lROOTNTuple
 DATAFILE ?= data/SingleNeutrino.dump
 
-.PHONY: clean 
+.PHONY: clean env format run_test_unpack run_test_speed run_test_comp
 
 all: unpack.exe rntuple_unpack.exe
 
@@ -17,7 +17,10 @@ rntuple_unpack.exe: rntuple_unpack.cc unpack.h MyDict.cxx
 	$(CC) $(CCFLAGS) $(LIBS) $< MyDict.cxx -o $@
 
 env:
-	@echo "source /cvmfs/sft.cern.ch/lcg/views/LCG_102/x86_64-centos8-gcc11-opt/setup.sh"
+	@echo "source /cvmfs/sft.cern.ch/lcg/views/dev4cuda/latest/x86_64-centos8-gcc11-opt/setup.shh"
+
+format:
+	clang-format -i puppi.h unpack.h unpack.cc rntuple_unpack.cc
 
 clean:
 	@rm *.exe *.root  MyDict.cxx MyDict_rdict.pcm 2> /dev/null || true

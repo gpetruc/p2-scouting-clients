@@ -340,11 +340,15 @@ inline void report(double tcpu, double real, const char *infile, const char *out
   int rc = stat(infile, &stat_buf);
   float insize = ((rc == 0) ? stat_buf.st_size : -1) / 1024. / 1024.;
   float inrate = insize / real;
-  printf("Done in %.2fs (cpu), %.2fs (real). Event rate: %.1f kHz, input data rate %.1f MB/s\n",
-         tcpu,
-         real,
-         entries / real / 1000.,
-         inrate);
+  printf(
+      "Done in %.2fs (cpu), %.2fs (real). Event rate: %.1f kHz (40 MHz / %.1f), input data rate %.1f MB/s (%.1f "
+      "Gbps)\n",
+      tcpu,
+      real,
+      entries / real / 1000.,
+      (40e6 * real / entries),
+      inrate,
+      inrate * 8 / 1024.);
   if (outfile) {
     rc = stat(outfile, &stat_buf);
     float outsize = ((rc == 0) ? stat_buf.st_size : -1) / 1024. / 1024.;
