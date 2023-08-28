@@ -54,7 +54,7 @@ void run_ipc(std::fstream &fin,
   auto f_z0 = arrow::field("z0", t_float);
   auto f_dxy = arrow::field("dxy", t_float);
   auto f_wpuppi = arrow::field("wpuppi", t_float);
-  auto f_pdgid = arrow::field("pid", arrow::int16());
+  auto f_pdgid = arrow::field("pdgId", arrow::int16());
   auto f_quality = arrow::field("quality", arrow::uint8());
 
   auto t_puppi = arrow::struct_({f_pt, f_eta, f_phi, f_z0, f_dxy, f_wpuppi, f_pdgid, f_quality});
@@ -151,7 +151,7 @@ void run_ipc_bulk(std::fstream &fin,
   auto f_z0 = arrow::field("z0", t_float);
   auto f_dxy = arrow::field("dxy", t_float);
   auto f_wpuppi = arrow::field("wpuppi", t_float);
-  auto f_pdgid = arrow::field("pid", arrow::int16());
+  auto f_pdgid = arrow::field("pdgId", arrow::int16());
   auto f_quality = arrow::field("quality", arrow::uint8());
 
   auto t_puppi = arrow::struct_({f_pt, f_eta, f_phi, f_z0, f_dxy, f_wpuppi, f_pdgid, f_quality});
@@ -263,7 +263,7 @@ void run_ipc_int_bulk(std::fstream &fin,
   auto f_z0 = arrow::field("z0", arrow::int16());
   auto f_dxy = arrow::field("dxy", arrow::int8());
   auto f_wpuppi = arrow::field("wpuppi", arrow::uint16());
-  auto f_pdgid = arrow::field("pid", arrow::int16());
+  auto f_pdgid = arrow::field("pdgId", arrow::int16());
   auto f_quality = arrow::field("quality", arrow::uint8());
 
   auto t_puppi = arrow::struct_({f_pt, f_eta, f_phi, f_z0, f_dxy, f_wpuppi, f_pdgid, f_quality});
@@ -521,5 +521,5 @@ int main(int argc, char **argv) {
   double time = (std::chrono::duration<double>(tend - tstart)).count();
   if (batchsize)
     printf("Wrote %lu record batches of size %lu, %.1f kHz\n", nbatches, batchsize, nbatches / 1000. / time);
-  report(time, time, inname, outname, entries);
+  report(time, time, entries, inname, outname);
 }

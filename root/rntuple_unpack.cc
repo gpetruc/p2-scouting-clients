@@ -12,9 +12,9 @@
 #include "puppi.h"
 
 void usage() {
-  printf("Usage: unpack.exe [-j N] <layout> <type> infile.dump [ outfile.root [ <compression> <level> ]\n");
-  printf("  layout := separate | combined\n");
-  printf("  type   := float | int\n");
+  printf("Usage: rntuple_unpack.exe [-j N] <layout> <type> infile.dump [ outfile.root [ <compression> <level> ]\n");
+  printf("  layout := combined | combined_coll | combined_struct\n");
+  printf("  type   := float\n");
   printf("  compression := lzma | zlib | lz4 | zstd\n");
 }
 int main(int argc, char **argv) {
@@ -74,7 +74,7 @@ int main(int argc, char **argv) {
     auto p_pt = model->MakeField<std::vector<float>>("Puppi_pt");
     auto p_eta = model->MakeField<std::vector<float>>("Puppi_eta");
     auto p_phi = model->MakeField<std::vector<float>>("Puppi_phi");
-    auto p_pdgid = model->MakeField<std::vector<short int>>("Puppi_pid");
+    auto p_pdgid = model->MakeField<std::vector<short int>>("Puppi_pdgId");
     auto p_z0 = model->MakeField<std::vector<float>>("Puppi_z0");
     auto p_dxy = model->MakeField<std::vector<float>>("Puppi_dxy");
     auto p_wpuppi = model->MakeField<std::vector<float>>("Puppi_wpuppi");
@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
     auto p_pt = submodel->MakeField<float>("pt");
     auto p_eta = submodel->MakeField<float>("eta");
     auto p_phi = submodel->MakeField<float>("phi");
-    auto p_pdgid = submodel->MakeField<short int>("pid");
+    auto p_pdgid = submodel->MakeField<short int>("pdgId");
     auto p_z0 = submodel->MakeField<float>("z0");
     auto p_dxy = submodel->MakeField<float>("dxy");
     auto p_wpuppi = submodel->MakeField<float>("wpuppi");
@@ -237,6 +237,6 @@ int main(int argc, char **argv) {
   }
   timer.Stop();
   double tcpu = timer.CpuTime(), treal = timer.RealTime();
-  report(tcpu, treal, argv[iarg + 2], narg > 3 ? argv[iarg + 3] : nullptr, entries);
+  report(tcpu, treal, entries, argv[iarg + 2], narg > 3 ? argv[iarg + 3] : nullptr);
   return 0;
 }

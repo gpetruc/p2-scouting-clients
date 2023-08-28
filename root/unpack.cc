@@ -211,7 +211,7 @@ int main(int argc, char **argv) {
       tree->Branch("Puppi_pt", &pt, ("Puppi_pt[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_eta", &eta, ("Puppi_eta[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_phi", &phi, ("Puppi_phi[nPuppi]/" + F).c_str());
-      tree->Branch("Puppi_pid", &pdgid, "Puppi_pid[nPuppi]/b");
+      tree->Branch("Puppi_pdgId", &pdgid, "Puppi_pdgId[nPuppi]/S");
       tree->Branch("Puppi_z0", &z0, ("Puppi_z0[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_dxy", &dxy, ("Puppi_dxy[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_wpuppi", &wpuppi, ("Puppi_wpuppi[nPuppi]/" + F).c_str());
@@ -255,7 +255,7 @@ int main(int argc, char **argv) {
       tree->Branch("PuppiCharged_pt", &pt_c, ("PuppiCharged_pt[nPuppiCharged]/" + F).c_str());
       tree->Branch("PuppiCharged_eta", &eta_c, ("PuppiCharged_eta[nPuppiCharged]/" + F).c_str());
       tree->Branch("PuppiCharged_phi", &phi_c, ("PuppiCharged_phi[nPuppiCharged]/" + F).c_str());
-      tree->Branch("PuppiCharged_pid", &pdgid_c, "PuppiCharged_pid[nPuppiCharged]/b");
+      tree->Branch("PuppiCharged_pdgId", &pdgid_c, "PuppiCharged_pdgId[nPuppiCharged]/S");
       tree->Branch("PuppiCharged_quality", &quality, "PuppiCharged_quality[nPuppiCharged]/b");
       tree->Branch("PuppiCharged_z0", &z0, ("PuppiCharged_z0[nPuppiCharged]/" + F).c_str());
       tree->Branch("PuppiCharged_dxy", &dxy, ("PuppiCharged_dxy[nPuppiCharged]/" + F).c_str());
@@ -264,7 +264,7 @@ int main(int argc, char **argv) {
       tree->Branch("PuppiNeutral_pt", &pt_n, ("PuppiNeutral_pt[nPuppiNeutral]/" + F).c_str());
       tree->Branch("PuppiNeutral_eta", &eta_n, ("PuppiNeutral_eta[nPuppiNeutral]/" + F).c_str());
       tree->Branch("PuppiNeutral_phi", &phi_n, ("PuppiNeutral_phi[nPuppiNeutral]/" + F).c_str());
-      tree->Branch("PuppiNeutral_pid", &pdgid_n, "PuppiNeutral_pid[nPuppiNeutral]/b");
+      tree->Branch("PuppiNeutral_pdgId", &pdgid_n, "PuppiNeutral_pdgId[nPuppiNeutral]/S");
       tree->Branch("PuppiNeutral_wpuppi", &wpuppi, ("PuppiNeutral_wpuppi[nPuppiNeutral]/" + F).c_str());
       tree->Branch("PuppiNeutral_id", &id, "PuppiNeutral_id[nPuppiNeutral]/b");
     }
@@ -335,6 +335,6 @@ int main(int argc, char **argv) {
   }
   timer.Stop();
   double tcpu = timer.CpuTime(), treal = timer.RealTime();
-  report(tcpu, treal, argv[iarg + 2], narg > 3 ? argv[iarg + 3] : nullptr, entries);
+  report(tcpu, treal, entries, argv[iarg + 2], narg > 3 ? argv[iarg + 3] : nullptr);
   return 0;
 }

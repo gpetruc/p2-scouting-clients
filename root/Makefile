@@ -17,7 +17,7 @@ rntuple_unpack.exe: rntuple_unpack.cc unpack.h MyDict.cxx
 	$(CC) $(CCFLAGS) $(LIBS) $< MyDict.cxx -o $@
 
 env:
-	@echo "source /cvmfs/sft.cern.ch/lcg/views/dev4cuda/latest/x86_64-centos8-gcc11-opt/setup.shh"
+	@echo "source /cvmfs/sft.cern.ch/lcg/views/dev4cuda/latest/x86_64-centos8-gcc11-opt/setup.sh"
 
 format:
 	clang-format -i puppi.h unpack.h unpack.cc rntuple_unpack.cc

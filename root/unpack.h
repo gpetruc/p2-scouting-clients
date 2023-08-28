@@ -4,9 +4,8 @@
 #include <math.h>
 #include <sys/stat.h>
 
-inline void readheader(
-    std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, uint16_t &npuppi) {
-  fin.read(reinterpret_cast<char *>(&header), sizeof(uint64_t));
+template<typename U>
+inline void parseHeader(const uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, U &npuppi) {
   npuppi = header & 0xFFF;
   bx = (header >> 12) & 0xFFF;
   orbit = (header >> 24) & 0X3FFFFFFF;
@@ -14,13 +13,14 @@ inline void readheader(
   good = (header & (1llu << 61));
 }
 inline void readheader(
+    std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, uint16_t &npuppi) {
+  fin.read(reinterpret_cast<char *>(&header), sizeof(uint64_t));
+  parseHeader(header, run, bx, orbit, good, npuppi);
+}
+inline void readheader(
     std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, uint8_t &npuppi) {
   fin.read(reinterpret_cast<char *>(&header), sizeof(uint64_t));
-  npuppi = header & 0xFF;
-  bx = (header >> 12) & 0xFFF;
-  orbit = (header >> 24) & 0X3FFFFFFF;
-  run = (header >> 54);
-  good = (header & (1llu << 61));
+  parseHeader(header, run, bx, orbit, good, npuppi);
 }
 inline void assignpdgid(uint8_t pid, short int &pdgid) {
   static constexpr int16_t PDGIDS[8] = {130, 22, -211, 211, 11, -11, 13, -13};
@@ -34,12 +34,12 @@ inline void assignpdgid(uint8_t pid, short int &pdgid) {
   //else if (pid == 6) pdgid = 13;
   //else if (pid == 7) pdgid = -13;
 }
-inline bool readpid(uint64_t &data, short int &pdgid) {
+inline bool readpid(const uint64_t data, short int &pdgid) {
   uint8_t pid = (data >> 37) & 0x7;
   assignpdgid(pid, pdgid);
   return (pid > 1);
 }
-inline bool readpid(uint64_t &data, short int &pdgid_c, short int &pdgid_n) {  //overload for "charged/neutral" version
+inline bool readpid(const uint64_t data, short int &pdgid_c, short int &pdgid_n) {  //overload for "charged/neutral" version
   uint8_t pid = (data >> 37) & 0x7;
   if (pid > 1) {
     assignpdgid(pid, pdgid_c);
@@ -49,12 +49,12 @@ inline bool readpid(uint64_t &data, short int &pdgid_c, short int &pdgid_n) {  /
     return false;
   }
 }
-inline void readshared(uint64_t &data, uint16_t &pt, int16_t &eta, int16_t &phi) {  //int
+inline void readshared(const uint64_t data, uint16_t &pt, int16_t &eta, int16_t &phi) {  //int
   pt = data & 0x3FFF;
   eta = ((data >> 25) & 1) ? ((data >> 14) | (-0x800)) : ((data >> 14) & (0xFFF));
   phi = ((data >> 36) & 1) ? ((data >> 26) | (-0x400)) : ((data >> 26) & (0x7FF));
 }
-inline void readshared(uint64_t &data, float &pt, float &eta, float &phi) {  //float
+inline void readshared(const uint64_t data, float &pt, float &eta, float &phi) {  //float
   uint16_t ptint = data & 0x3FFF;
   pt = ptint * 0.25;
 
@@ -64,13 +64,13 @@ inline void readshared(uint64_t &data, float &pt, float &eta, float &phi) {  //f
   int phiint = ((data >> 36) & 1) ? ((data >> 26) | (-0x400)) : ((data >> 26) & (0x7FF));
   phi = phiint * M_PI / 720.;
 }
-inline void readcharged(uint64_t data, int16_t &z0, int8_t &dxy, uint16_t &quality) {  //int
+inline void readcharged(const uint64_t data, int16_t &z0, int8_t &dxy, uint16_t &quality) {  //int
   z0 = ((data >> 49) & 1) ? ((data >> 40) | (-0x200)) : ((data >> 40) & 0x3FF);
 
   dxy = ((data >> 57) & 1) ? ((data >> 50) | (-0x100)) : ((data >> 50) & 0xFF);
   quality = (data >> 58) & 0x7;  //3 bits
 }
-inline void readcharged(uint64_t data, float &z0, float &dxy, uint16_t &quality) {  //float
+inline void readcharged(const uint64_t data, float &z0, float &dxy, uint16_t &quality) {  //float
   int z0int = ((data >> 49) & 1) ? ((data >> 40) | (-0x200)) : ((data >> 40) & 0x3FF);
   z0 = z0int * .05;  //conver to centimeters
 
@@ -78,13 +78,13 @@ inline void readcharged(uint64_t data, float &z0, float &dxy, uint16_t &quality)
   dxy = dxyint * 0.05;           // PLACEHOLDER
   quality = (data >> 58) & 0x7;  //3 bits
 }
-inline void readcharged(uint64_t data, int16_t &z0, int8_t &dxy, uint8_t &quality) {  //int
+inline void readcharged(const uint64_t data, int16_t &z0, int8_t &dxy, uint8_t &quality) {  //int
   z0 = ((data >> 49) & 1) ? ((data >> 40) | (-0x200)) : ((data >> 40) & 0x3FF);
 
   dxy = ((data >> 57) & 1) ? ((data >> 50) | (-0x100)) : ((data >> 50) & 0xFF);
   quality = (data >> 58) & 0x7;  //3 bits
 }
-inline void readcharged(uint64_t data, float &z0, float &dxy, uint8_t &quality) {  //float
+inline void readcharged(const uint64_t data, float &z0, float &dxy, uint8_t &quality) {  //float
   int z0int = ((data >> 49) & 1) ? ((data >> 40) | (-0x200)) : ((data >> 40) & 0x3FF);
   z0 = z0int * .05;  //conver to centimeters
 
@@ -92,20 +92,20 @@ inline void readcharged(uint64_t data, float &z0, float &dxy, uint8_t &quality) 
   dxy = dxyint * 0.05;           // PLACEHOLDER
   quality = (data >> 58) & 0x7;  //3 bits
 }
-inline void readneutral(uint64_t data, uint16_t &wpuppi, uint16_t &id) {
+inline void readneutral(const uint64_t data, uint16_t &wpuppi, uint16_t &id) {
   wpuppi = (data >> 23) & 0x3FF;
   id = (data >> 13) & 0x3F;
 }
-inline void readneutral(uint64_t data, float &wpuppi, uint16_t &id) {
+inline void readneutral(const uint64_t data, float &wpuppi, uint16_t &id) {
   int wpuppiint = (data >> 23) & 0x3FF;
   wpuppi = wpuppiint / 256;
   id = (data >> 13) & 0x3F;
 }
-inline void readneutral(uint64_t data, uint16_t &wpuppi, uint8_t &id) {
+inline void readneutral(const uint64_t data, uint16_t &wpuppi, uint8_t &id) {
   wpuppi = (data >> 23) & 0x3FF;
   id = (data >> 13) & 0x3F;
 }
-inline void readneutral(uint64_t data, float &wpuppi, uint8_t &id) {
+inline void readneutral(const uint64_t data, float &wpuppi, uint8_t &id) {
   int wpuppiint = (data >> 23) & 0x3FF;
   wpuppi = wpuppiint / 256;
   id = (data >> 13) & 0x3F;
@@ -335,31 +335,40 @@ inline void readevent(std::fstream &fin,
   }
 }
 
-inline void report(double tcpu, double real, const char *infile, const char *outfile, int entries) {
-  struct stat stat_buf;
-  int rc = stat(infile, &stat_buf);
-  float insize = ((rc == 0) ? stat_buf.st_size : -1) / 1024. / 1024.;
-  float inrate = insize / real;
+inline void report(double tcpu, double treal, int entries, float insize, float outsize) {
+  float inrate = insize / (1024. * 1024.) / treal;
   printf(
       "Done in %.2fs (cpu), %.2fs (real). Event rate: %.1f kHz (40 MHz / %.1f), input data rate %.1f MB/s (%.1f "
       "Gbps)\n",
       tcpu,
-      real,
-      entries / real / 1000.,
-      (40e6 * real / entries),
+      treal,
+      entries / treal / 1000.,
+      (40e6 * treal / entries),
       inrate,
       inrate * 8 / 1024.);
-  if (outfile) {
-    rc = stat(outfile, &stat_buf);
-    float outsize = ((rc == 0) ? stat_buf.st_size : -1) / 1024. / 1024.;
-    float outrate = outsize / real;
+  if (outsize) {
+    float outrate = outsize / (1024. * 1024.) / treal;
     float ratio = outsize / insize;
-    printf("Input file size: %.2f MB, Output file size: %.2f MB, File size ratio: %.3f, output data rate %.1f MB/s\n\n",
-           insize,
-           outsize,
-           ratio,
-           outrate);
+    printf(
+        "Input file size: %.2f MB, Output file size: %.2f MB, File size ratio: %.3f, output data rate %.1f MB/s (%.1f "
+        "Gbps)\n\n",
+        insize / (1024. * 1024.),
+        outsize / (1024. * 1024.),
+        ratio,
+        outrate,
+        outrate * 8 / 1024);
   } else {
     printf("\n");
   }
+}
+
+inline void report(double tcpu, double treal, int entries, const char *infile, const char *outfile) {
+  struct stat stat_buf;
+  int rc = stat(infile, &stat_buf);
+  float insize = ((rc == 0) ? stat_buf.st_size : 0), outsize = 0;
+  if (outfile) {
+    rc = stat(outfile, &stat_buf);
+    outsize = ((rc == 0) ? stat_buf.st_size : 0);
+  }
+  report(tcpu, treal, entries, insize, outsize);
 }
