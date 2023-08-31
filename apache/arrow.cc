@@ -85,6 +85,8 @@ void run_ipc(std::fstream &fin,
 
   while (fin.good()) {
     readevent(fin, header, run, bx, orbit, good, npuppi, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
+    if (header == 0)
+      continue;  // skip null padding
     b_run->Append(run);
     b_orbit->Append(orbit);
     b_bx->Append(bx);
@@ -171,6 +173,8 @@ void run_ipc_bulk(std::fstream &fin,
   bool good;
   while (fin.good()) {
     readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
+    if (header[e] == 0)
+      continue;  // skip null padding
     b_good->Append(good);
     unsigned int lastvalid = offsets.back();
     offsets.emplace_back(offsets.back() + npuppi[e]);
@@ -283,6 +287,8 @@ void run_ipc_int_bulk(std::fstream &fin,
   bool good;
   while (fin.good()) {
     readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
+    if (header[e] == 0)
+      continue;  // skip null padding
     b_good->Append(good);
     unsigned int lastvalid = offsets.back();
     offsets.emplace_back(offsets.back() + npuppi[e]);
@@ -383,6 +389,8 @@ void run_ipc_raw64_bulk(std::fstream &fin,
   bool good;
   while (fin.good()) {
     readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
+    if (header[e] == 0)
+      continue;  // skip null padding
     b_good->Append(good);
     unsigned int lastvalid = offsets.back();
     offsets.emplace_back(offsets.back() + npuppi[e]);

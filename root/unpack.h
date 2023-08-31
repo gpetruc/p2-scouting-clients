@@ -4,7 +4,7 @@
 #include <math.h>
 #include <sys/stat.h>
 
-template<typename U>
+template <typename U>
 inline void parseHeader(const uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, U &npuppi) {
   npuppi = header & 0xFFF;
   bx = (header >> 12) & 0xFFF;
@@ -39,7 +39,9 @@ inline bool readpid(const uint64_t data, short int &pdgid) {
   assignpdgid(pid, pdgid);
   return (pid > 1);
 }
-inline bool readpid(const uint64_t data, short int &pdgid_c, short int &pdgid_n) {  //overload for "charged/neutral" version
+inline bool readpid(const uint64_t data,
+                    short int &pdgid_c,
+                    short int &pdgid_n) {  //overload for "charged/neutral" version
   uint8_t pid = (data >> 37) & 0x7;
   if (pid > 1) {
     assignpdgid(pid, pdgid_c);

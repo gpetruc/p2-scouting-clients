@@ -89,6 +89,8 @@ int main(int argc, char **argv) {
     timer.Start();
     while (fin.good()) {
       readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, *p_npuppi);
+      if (header == 0)
+        continue;  // skip null padding
       unsigned int npuppi = *p_npuppi;
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&data[0]), npuppi * sizeof(uint64_t));
@@ -145,6 +147,8 @@ int main(int argc, char **argv) {
     timer.Start();
     while (fin.good()) {
       readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
+      if (header == 0)
+        continue;  // skip null padding
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&data[0]), npuppi * sizeof(uint64_t));
       for (unsigned int i = 0, n = npuppi; i < n; ++i) {
@@ -184,6 +188,8 @@ int main(int argc, char **argv) {
     timer.Start();
     while (fin.good()) {
       readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
+      if (header == 0)
+        continue;  // skip null padding
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&data[0]), npuppi * sizeof(uint64_t));
       p_puppi->resize(npuppi);
@@ -223,6 +229,8 @@ int main(int argc, char **argv) {
     timer.Start();
     while (fin.good()) {
       readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
+      if (header == 0)
+        continue;  // skip null padding
       p_puppi->resize(npuppi);
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&*p_puppi->begin()), npuppi * sizeof(uint64_t));

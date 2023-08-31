@@ -105,6 +105,8 @@ int main(int argc, char **argv) {
     timer.Start();
     while (fin.good()) {
       readevent(fin, header, run, bx, orbit, good, npuppi, data, pt, eta, phi, pdgid, z0, dxy, quality, wpuppi, id);
+      if (header == 0)
+        continue;  // skip null padding
       if (tree)
         tree->Fill();
       entries++;
@@ -177,6 +179,8 @@ int main(int argc, char **argv) {
                 quality,
                 wpuppi,
                 id);
+      if (header == 0)
+        continue;  // skip null padding
       if (tree)
         tree->Fill();
       entries++;
@@ -221,6 +225,8 @@ int main(int argc, char **argv) {
     timer.Start();
     while (fin.good()) {
       readevent(fin, header, run, bx, orbit, good, npuppi8, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
+      if (header == 0)
+        continue;  // skip null padding
       npuppi16 = npuppi8;
       if (tree)
         tree->Fill();
@@ -294,6 +300,8 @@ int main(int argc, char **argv) {
                 quality,
                 wpuppi,
                 id);
+      if (header == 0)
+        continue;  // skip null padding
       if (tree)
         tree->Fill();
       entries++;
@@ -318,6 +326,8 @@ int main(int argc, char **argv) {
     timer.Start();
     while (fin.good()) {
       readheader(fin, header, run, bx, orbit, good, npuppi8);
+      if (header == 0)
+        continue;  // skip null padding
       if (npuppi8)
         fin.read(reinterpret_cast<char *>(data), npuppi8 * sizeof(uint64_t));
       npuppi16 = npuppi8;
