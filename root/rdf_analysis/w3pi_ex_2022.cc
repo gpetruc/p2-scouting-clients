@@ -8,21 +8,25 @@
  * input files formats, and slight optimization of the code.
  */
 
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <vector>
+
+#include "Math/Vector4D.h"
 #include "ROOT/RDataFrame.hxx"
 #include "ROOT/RNTupleDS.hxx"
 #include "ROOT/RVec.hxx"
-#include <ROOT/RLogger.hxx>
 #include "TFile.h"
 #include "TH1D.h"
-#include "Math/Vector4D.h"
-#include <vector>
-#include <cstdlib>
-#include <cstdio>
 #include <Math/GenVector/LorentzVector.h>
 #include <Math/GenVector/PtEtaPhiM4D.h>
-#include <stdlib.h>
-#include <math.h>
+#include <ROOT/RLogger.hxx>
+#include <ROOT/RSnapshotOptions.hxx>
 #include <TStopwatch.h>
+
+#include <getopt.h>
 
 template <typename T>
 using Vec = ROOT::RVec<T>;
@@ -217,17 +221,30 @@ auto tripletmass(const Vec<unsigned int> &t, const Vec<float> &pts, const Vec<fl
 
 auto convertIds(const Vec<int> &mcids) { return ROOT::VecOps::Construct<short>(mcids); }
 
-int main(int argc, char **argv) {
-  if (argc <= 1) {
-    std::cout << "Usage: " << argv[0] << " inputFile.root [mc]" << std::endl;
-  }
-  //increase verbosity to see how long this is taking
-  auto verbosity =
-      ROOT::Experimental::RLogScopedVerbosity(ROOT::Detail::RDF::RDFLogChannel(), ROOT::Experimental::ELogLevel::kInfo);
-
-  std::string format = (argc >= 3 ? std::string(argv[2]) : "tree");
+void analyze(ROOT::RDataFrame &d,
+             const std::string &format,
+             unsigned int &ntot,
+             unsigned int &npre,
+             unsigned int &npass,
+             const std::string &output,
+             const char *fout) {
   std::string c_pt, c_eta, c_phi, c_pdgId;
-  bool isMC = false, isRNtuple = (format.find("rntuple") == 0);
+  std::vector<std::string> outputs = {"run",
+                                      "orbit",
+                                      "bx",
+                                      "good",
+                                      "nPuppi",
+                                      "Puppi_pt",
+                                      "Puppi_eta",
+                                      "Puppi_phi",
+                                      "Puppi_pdgId",
+                                      "Puppi_z0",
+                                      "Puppi_dxy",
+                                      "Puppi_wpuppi",
+                                      "Puppi_quality",
+                                      "Triplet_Index",
+                                      "Triplet_Mass"};
+  bool isMC = false;
   if (format == "tree" || format == "rntuple_vec") {
     c_pt = "Puppi_pt";
     c_eta = "Puppi_eta";
@@ -244,11 +261,22 @@ int main(int argc, char **argv) {
     c_eta = "Puppi.eta";
     c_phi = "Puppi.phi";
     c_pdgId = "Puppi.pdgId";
+    outputs = {"run",
+               "orbit",
+               "bx",
+               "good",
+               "nPuppi",
+               "Puppi.pt",
+               "Puppi.eta",
+               "Puppi.phi",
+               "Puppi.pdgId",
+               "Puppi.z0",
+               "Puppi.dxy",
+               "Puppi.wpuppi",
+               "Puppi.quality",
+               "Triplet_Index",
+               "Triplet_Mass"};
   }
-  ROOT::RDataFrame d =
-      isRNtuple ? ROOT::RDF::Experimental::FromRNTuple("Events", argv[1]) : ROOT::RDataFrame("Events", argv[1]);
-  //d.Describe().Print();
-  TStopwatch timer;
   auto c0 = d.Count();
   auto d1 = isMC ? d.Define("Puppi_pdgId", convertIds, {"L1Puppi_pdgId"}).Filter(initptcut, {c_pt, c_pdgId})
                  : d.Filter(initptcut, {c_pt, c_pdgId});
@@ -258,11 +286,118 @@ int main(int argc, char **argv) {
                 .Define("Triplet_Mass", tripletmass, {"Triplet_Index", c_pt, c_eta, c_phi});
   auto masshist =
       d2.Histo1D<float>({"masshist", "W Boson mass from selected pions; mass (GeV/c^2)", 100, 0, 100}, "Triplet_Mass");
-  unsigned int npass = masshist->GetEntries();
+
+  if (output == "snapshot") {
+    ROOT::RDF::RSnapshotOptions opts;
+    opts.fCompressionLevel = 0;
+    if (format == "rntuple_coll") {
+      auto d3 = d2.Alias("nPuppi", "#Puppi");
+      d3.Snapshot("Events", fout, outputs, opts);
+    } else {
+      d2.Snapshot("Events", fout, outputs, opts);
+    }
+  }
+  ntot = *c0;
+  npre = *c1;
+  npass = masshist->GetEntries();
+  if (output == "histo") {
+    TFile *fOut = TFile::Open(fout, "RECREATE", 0, 0);
+    fOut->WriteTObject(masshist->Clone());
+    fOut->Close();
+  } else if (output == "rawhisto") {
+    std::fstream f(fout, std::ios::binary | std::ios::out | std::ios::trunc);
+    uint32_t nbins = masshist->GetNbinsX();
+    f.write(reinterpret_cast<char *>(&nbins), sizeof(uint32_t));
+    f.write(reinterpret_cast<char *>(masshist->GetArray()), (nbins + 2) * sizeof(Double_t));
+    f.close();
+  }
+}
+
+void usage() {
+  printf("Usage: w3pi_ex_2022.exe [options] infile [outfile]\n");
+  printf("  -f format: tree (default), mc, rntuple_(coll|vec)\n");
+  printf("  -o output: none (default), histo, rawhisto, snapshot\n");
+  printf("  -v       : verbose printout\n");
+  printf("  -j N     : multithread with N threads\n");
+}
+
+int main(int argc, char **argv) {
+  if (argc <= 1) {
+    usage();
+    return 1;
+  }
+
+  int threads = -1;
+  bool verbose = false;
+  std::string format = "tree", output = "none";
+  while (1) {
+    static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
+                                           {"verbose", no_argument, nullptr, 'v'},
+                                           {"format", required_argument, nullptr, 'f'},
+                                           {"output", required_argument, nullptr, 'o'},
+                                           {"threads", required_argument, nullptr, 'j'},
+                                           {nullptr, 0, nullptr, 0}};
+    int option_index = 0;
+    int optc = getopt_long(argc, argv, "hvj:f:o:", long_options, &option_index);
+    if (optc == -1)
+      break;
+
+    switch (optc) {
+      case 'h':
+        usage();
+        return 0;
+      case 'f':
+        format = std::string(optarg);
+        break;
+      case 'j':
+        threads = std::atoi(optarg);
+        break;
+      case 'o':
+        output = std::string(optarg);
+        break;
+      case 'v':
+        verbose = true;
+        break;
+      default:
+        usage();
+        return 1;
+    }
+  }
+
+  int iarg = optind, narg = argc - optind;
+
+  if ((output != "none") && (narg == 1)) {
+    printf("Error: specifying an output format, you must specify an output filename.\n");
+    return 1;
+  }
+
+  if (threads > -1)
+    ROOT::EnableImplicitMT(threads);
+
+  //increase verbosity to see how long this is taking
+  auto verbosity =
+      ROOT::Experimental::RLogScopedVerbosity(ROOT::Detail::RDF::RDFLogChannel(), ROOT::Experimental::ELogLevel::kInfo);
+  // and suppress RNTuple verbosity
+  auto rntVerbosity =
+      ROOT::Experimental::RLogScopedVerbosity(ROOT::Experimental::NTupleLog(), ROOT::Experimental::ELogLevel::kError);
+
+  TStopwatch timer;
+  unsigned int ntot, npre, npass;
+  if (format.find("rntuple") == 0) {
+    ROOT::RDataFrame d = ROOT::RDF::Experimental::FromRNTuple("Events", argv[iarg]);
+    if (verbose)
+      d.Describe().Print();
+    analyze(d, format, ntot, npre, npass, output, (narg > 1 ? argv[iarg + 1] : ""));
+  } else {
+    ROOT::RDataFrame d("Events", argv[iarg]);
+    if (verbose)
+      d.Describe().Print();
+    analyze(d, format, ntot, npre, npass, output, (narg > 1 ? argv[iarg + 1] : ""));
+  }
+
   timer.Stop();
-  unsigned int ntot = *c0, npre = *c1;
   printf("Run on %s, %9u events, preselected %8u events, selected %8u events (%.6f) in %7.3f s (%7.1f kHz)\n",
-         argv[1],
+         argv[iarg],
          ntot,
          npre,
          npass,

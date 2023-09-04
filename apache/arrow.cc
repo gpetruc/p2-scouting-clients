@@ -81,7 +81,7 @@ void run_ipc(std::fstream &fin,
 
   std::shared_ptr<arrow::ipc::RecordBatchWriter> batch_writer;
   if (output_file)
-    batch_writer = *arrow::ipc::MakeFileWriter(output_file, schema, options);
+    batch_writer = *arrow::ipc::MakeStreamWriter(output_file, schema, options);
 
   while (fin.good()) {
     readevent(fin, header, run, bx, orbit, good, npuppi, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
@@ -164,7 +164,7 @@ void run_ipc_bulk(std::fstream &fin,
 
   std::shared_ptr<arrow::ipc::RecordBatchWriter> batch_writer;
   if (output_file)
-    batch_writer = *arrow::ipc::MakeFileWriter(output_file, schema, options);
+    batch_writer = *arrow::ipc::MakeStreamWriter(output_file, schema, options);
 
   unsigned int e = 0;
   std::vector<int> offsets(1, 0);
@@ -278,7 +278,7 @@ void run_ipc_int_bulk(std::fstream &fin,
 
   std::shared_ptr<arrow::ipc::RecordBatchWriter> batch_writer;
   if (output_file)
-    batch_writer = *arrow::ipc::MakeFileWriter(output_file, schema, options);
+    batch_writer = *arrow::ipc::MakeStreamWriter(output_file, schema, options);
 
   unsigned int e = 0;
   std::vector<int> offsets(1, 0);
@@ -380,7 +380,7 @@ void run_ipc_raw64_bulk(std::fstream &fin,
 
   std::shared_ptr<arrow::ipc::RecordBatchWriter> batch_writer;
   if (output_file)
-    batch_writer = *arrow::ipc::MakeFileWriter(output_file, schema, options);
+    batch_writer = *arrow::ipc::MakeStreamWriter(output_file, schema, options);
 
   unsigned int e = 0;
   std::vector<int> offsets(1, 0);
