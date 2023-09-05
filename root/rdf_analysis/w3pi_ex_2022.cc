@@ -292,9 +292,39 @@ void analyze(ROOT::RDataFrame &d,
     opts.fCompressionLevel = 0;
     if (format == "rntuple_coll") {
       auto d3 = d2.Alias("nPuppi", "#Puppi");
-      d3.Snapshot("Events", fout, outputs, opts);
+      d3.Snapshot<uint16_t,              // run
+                  uint32_t,              // orbit
+                  uint16_t,              // bx
+                  bool,                  // good
+                  uint16_t,              // nPuppi
+                  ROOT::RVec<float>,     // Puppi_pt (RNTuple reads them as RVec)
+                  ROOT::RVec<float>,     // Puppi_eta
+                  ROOT::RVec<float>,     // Puppi_phi
+                  ROOT::RVec<int16_t>,   // Puppi_pdgId
+                  ROOT::RVec<float>,     // Puppi_z0
+                  ROOT::RVec<float>,     // Puppi_dxy
+                  ROOT::RVec<float>,     // Puppi_wpuppi
+                  ROOT::RVec<uint8_t>,   // Puppi_quality
+                  ROOT::RVec<unsigned>,  // Triplet_Index
+                  float                  // Triplet_mass
+                  >("Events", fout, outputs, opts);
     } else {
-      d2.Snapshot("Events", fout, outputs, opts);
+      d2.Snapshot<uint16_t,              // run
+                  uint32_t,              // orbit
+                  uint16_t,              // bx
+                  bool,                  // good
+                  uint16_t,              // nPuppi
+                  ROOT::RVec<float>,     // Puppi_pt   (actually a float[], but RDF Snapshot doesn't like it;
+                  ROOT::RVec<float>,     // Puppi_eta   JIT-ed Snapshot would get the arrays correctly, though)
+                  ROOT::RVec<float>,     // Puppi_phi
+                  ROOT::RVec<int16_t>,   // Puppi_pdgId
+                  ROOT::RVec<float>,     // Puppi_z0
+                  ROOT::RVec<float>,     // Puppi_dxy
+                  ROOT::RVec<float>,     // Puppi_wpuppi
+                  ROOT::RVec<uint8_t>,   // Puppi_quality
+                  ROOT::RVec<unsigned>,  // Triplet_Index
+                  float                  // Triplet_mass
+                  >("Events", fout, outputs, opts);
     }
   }
   ntot = *c0;
@@ -396,13 +426,16 @@ int main(int argc, char **argv) {
   }
 
   timer.Stop();
-  printf("Run on %s, %9u events, preselected %8u events, selected %8u events (%.6f) in %7.3f s (%7.1f kHz)\n",
-         argv[iarg],
-         ntot,
-         npre,
-         npass,
-         npass / float(ntot),
-         timer.RealTime(),
-         ntot * .001 / timer.RealTime());
+  printf(
+      "Run on %s, %9u events, preselected %8u events, selected %8u events (%.6f) in %7.3f s (%7.1f kHz, 40 MHz / "
+      "%.1f)\n",
+      argv[iarg],
+      ntot,
+      npre,
+      npass,
+      npass / float(ntot),
+      timer.RealTime(),
+      ntot * .001 / timer.RealTime(),
+      40e6 * timer.RealTime() / ntot);
   return 0;
 }
