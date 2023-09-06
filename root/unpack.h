@@ -374,3 +374,18 @@ inline void report(double tcpu, double treal, int entries, const char *infile, c
   }
   report(tcpu, treal, entries, insize, outsize);
 }
+
+inline void report(
+    double tcpu, double treal, int entries, const std::vector<std::string> &infiles, const std::string &outfile) {
+  float insize = 0, outsize = 0;
+  struct stat stat_buf;
+  for (auto &infile : infiles) {
+    int rc = stat(infile.c_str(), &stat_buf);
+    insize += ((rc == 0) ? stat_buf.st_size : 0);
+  };
+  if (!outfile.empty()) {
+    int rc = stat(outfile.c_str(), &stat_buf);
+    outsize = ((rc == 0) ? stat_buf.st_size : 0);
+  }
+  report(tcpu, treal, entries, insize, outsize);
+}

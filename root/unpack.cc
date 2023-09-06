@@ -12,7 +12,7 @@
 #include "unpack.h"
 
 void usage() {
-  printf("Usage: unpack.exe [ options ] <layout> <type> infile.dump [ outfile.root ]\n");
+  printf("Usage: unpack.exe [ options ] <layout> <type> infile.dump [infile2.dump ...] [ outfile.root ]\n");
   printf("  layout := separate | combined\n");
   printf("  type   := float | float24 | int | raw64\n");
   printf("Options: \n");
@@ -82,17 +82,16 @@ int main(int argc, char **argv) {
   int iarg = optind, narg = argc - optind;
   std::string method = std::string(argv[iarg]), type = std::string(argv[iarg + 1]);
   printf("Will run with method %s, type %s\n", argv[iarg], argv[iarg + 1]);
-  std::fstream fin(argv[iarg + 2], std::ios_base::in | std::ios_base::binary);
-  if (!fin.good()) {
-    printf("Error opening %s\n", argv[iarg + 2]);
-    return 2;
-  }
+
+  std::vector<std::string> ins;
+  std::vector<std::fstream> fins;
   TFile *fout = nullptr;
   TTree *tree = nullptr;
   std::string output;
-  for (int i = iarg+3; i < iarg + narg; ++i) {
+
+  for (int i = iarg + 2; i < iarg + narg; ++i) {
     std::string fname = argv[i];
-    if (fname.length() > 5 && fname.substr(fname.length()-5) == ".root") {
+    if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".root") {
       if (fout != nullptr) {
         printf("Multiple output root files specified in the command line\n");
         return 2;
@@ -106,6 +105,13 @@ int main(int argc, char **argv) {
       if (compressionLevel)
         fout->SetCompressionAlgorithm(compressionAlgo);
       tree = new TTree("Events", "Events");
+    } else {  // assume it's an input file
+      ins.emplace_back(argv[i]);
+      fins.emplace_back(argv[i], std::ios_base::in | std::ios_base::binary);
+      if (!fins.back().good()) {
+        printf("Error opening %s\n", argv[iarg + 2]);
+        return 2;
+      }
     }
   }
 
@@ -147,10 +153,12 @@ int main(int argc, char **argv) {
     }
 
     timer.Start();
-    while (fin.good()) {
-      readevent(fin, header, run, bx, orbit, good, npuppi, data, pt, eta, phi, pdgid, z0, dxy, quality, wpuppi, id);
-      if (header == 0)
-        continue;  // skip null padding
+
+    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+      std::fstream &fin = fins[ifile];
+      do {
+        readevent(fin, header, run, bx, orbit, good, npuppi, data, pt, eta, phi, pdgid, z0, dxy, quality, wpuppi, id);
+      } while (header == 0 && fin.good());
       if (tree)
         tree->Fill();
       entries++;
@@ -199,32 +207,33 @@ int main(int argc, char **argv) {
     }
 
     timer.Start();
-    while (fin.good()) {
-      readevent(fin,
-                header,
-                run,
-                bx,
-                orbit,
-                good,
-                npuppi,
-                npuppi_c,
-                npuppi_n,
-                data,
-                pt_c,
-                pt_n,
-                eta_c,
-                eta_n,
-                phi_c,
-                phi_n,
-                pdgid_c,
-                pdgid_n,
-                z0,
-                dxy,
-                quality,
-                wpuppi,
-                id);
-      if (header == 0)
-        continue;  // skip null padding
+    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+      std::fstream &fin = fins[ifile];
+      do {
+        readevent(fin,
+                  header,
+                  run,
+                  bx,
+                  orbit,
+                  good,
+                  npuppi,
+                  npuppi_c,
+                  npuppi_n,
+                  data,
+                  pt_c,
+                  pt_n,
+                  eta_c,
+                  eta_n,
+                  phi_c,
+                  phi_n,
+                  pdgid_c,
+                  pdgid_n,
+                  z0,
+                  dxy,
+                  quality,
+                  wpuppi,
+                  id);
+      } while (header == 0 && fin.good());
       if (tree)
         tree->Fill();
       entries++;
@@ -267,15 +276,17 @@ int main(int argc, char **argv) {
     }
 
     timer.Start();
-    while (fin.good()) {
-      readevent(fin, header, run, bx, orbit, good, npuppi8, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
-      if (header == 0)
-        continue;  // skip null padding
+    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+      std::fstream &fin = fins[ifile];
+      do {
+        readevent(fin, header, run, bx, orbit, good, npuppi8, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
+      } while (header == 0 && fin.good());
       npuppi16 = npuppi8;
       if (tree)
         tree->Fill();
       entries++;
     }
+
   } else if ((type == "float" || type == "float24") && method == "separate") {
     uint64_t header, data[255];
     uint16_t run, bx;
@@ -320,32 +331,33 @@ int main(int argc, char **argv) {
     }
 
     timer.Start();
-    while (fin.good()) {
-      readevent(fin,
-                header,
-                run,
-                bx,
-                orbit,
-                good,
-                npuppi,
-                npuppi_c,
-                npuppi_n,
-                data,
-                pt_c,
-                pt_n,
-                eta_c,
-                eta_n,
-                phi_c,
-                phi_n,
-                pdgid_c,
-                pdgid_n,
-                z0,
-                dxy,
-                quality,
-                wpuppi,
-                id);
-      if (header == 0)
-        continue;  // skip null padding
+    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+      std::fstream &fin = fins[ifile];
+      do {
+        readevent(fin,
+                  header,
+                  run,
+                  bx,
+                  orbit,
+                  good,
+                  npuppi,
+                  npuppi_c,
+                  npuppi_n,
+                  data,
+                  pt_c,
+                  pt_n,
+                  eta_c,
+                  eta_n,
+                  phi_c,
+                  phi_n,
+                  pdgid_c,
+                  pdgid_n,
+                  z0,
+                  dxy,
+                  quality,
+                  wpuppi,
+                  id);
+      } while (header == 0 && fin.good());
       if (tree)
         tree->Fill();
       entries++;
@@ -368,10 +380,11 @@ int main(int argc, char **argv) {
     }
 
     timer.Start();
-    while (fin.good()) {
-      readheader(fin, header, run, bx, orbit, good, npuppi8);
-      if (header == 0)
-        continue;  // skip null padding
+    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+      std::fstream &fin = fins[ifile];
+      do {
+        readheader(fin, header, run, bx, orbit, good, npuppi8);
+      } while (header == 0 && fin.good());
       if (npuppi8)
         fin.read(reinterpret_cast<char *>(data), npuppi8 * sizeof(uint64_t));
       npuppi16 = npuppi8;
@@ -379,6 +392,7 @@ int main(int argc, char **argv) {
         tree->Fill();
       entries++;
     }
+
   } else {
     usage();
     return 4;
@@ -389,6 +403,6 @@ int main(int argc, char **argv) {
   }
   timer.Stop();
   double tcpu = timer.CpuTime(), treal = timer.RealTime();
-  report(tcpu, treal, entries, argv[iarg + 2], output.empty() ? nullptr : output.c_str());
+  report(tcpu, treal, entries, ins, output);
   return 0;
 }

@@ -14,7 +14,7 @@
 #include "puppi.h"
 
 void usage() {
-  printf("Usage: rntuple_unpack.exe [options] <layout> <type> infile.dump [ outfile.root ]\n");
+  printf("Usage: rntuple_unpack.exe [options] <layout> <type> infile.dump [infile2.dump ...] [ outfile.root ]\n");
   printf("  layout := combined | combined_coll | combined_struct\n");
   printf("  type   := float | raw64\n");
   printf("Options: \n");
@@ -84,14 +84,12 @@ int main(int argc, char **argv) {
   std::string method = std::string(argv[iarg]);
   std::string type = std::string(argv[iarg + 1]);
   printf("Will run RTNuple with method %s, type %s\n", argv[iarg], argv[iarg + 1]);
-  std::fstream fin(argv[iarg + 2], std::ios_base::in | std::ios_base::binary);
-  if (!fin.good()) {
-    printf("Error opening %s\n", argv[iarg + 2]);
-    return 2;
-  }
 
+  std::vector<std::string> ins;
+  std::vector<std::fstream> fins;
   std::string output;
-  for (int i = iarg+3; i < iarg + narg; ++i) {
+
+  for (int i = iarg + 2; i < iarg + narg; ++i) {
     std::string fname = argv[i];
     if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".root") {
       if (!output.empty()) {
@@ -99,6 +97,13 @@ int main(int argc, char **argv) {
         return 2;
       }
       output = fname;
+    } else {  // assume it's an input file
+      ins.emplace_back(argv[i]);
+      fins.emplace_back(argv[i], std::ios_base::in | std::ios_base::binary);
+      if (!fins.back().good()) {
+        printf("Error opening %s\n", argv[iarg + 2]);
+        return 2;
+      }
     }
   }
 
@@ -128,11 +133,11 @@ int main(int argc, char **argv) {
       options.SetCompression(compressionLevel);
       writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", output.c_str(), options);
     }
-    timer.Start();
-    while (fin.good()) {
-      readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, *p_npuppi);
-      if (header == 0)
-        continue;  // skip null padding
+    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+      std::fstream &fin = fins[ifile];
+      do {
+        readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, *p_npuppi);
+      } while (header == 0 && fin.good());
       unsigned int npuppi = *p_npuppi;
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&data[0]), npuppi * sizeof(uint64_t));
@@ -187,10 +192,11 @@ int main(int argc, char **argv) {
     }
     uint16_t npuppi;
     timer.Start();
-    while (fin.good()) {
-      readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
-      if (header == 0)
-        continue;  // skip null padding
+    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+      std::fstream &fin = fins[ifile];
+      do {
+        readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
+      } while (header == 0 && fin.good());
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&data[0]), npuppi * sizeof(uint64_t));
       for (unsigned int i = 0, n = npuppi; i < n; ++i) {
@@ -228,10 +234,11 @@ int main(int argc, char **argv) {
     }
     uint16_t npuppi;
     timer.Start();
-    while (fin.good()) {
-      readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
-      if (header == 0)
-        continue;  // skip null padding
+    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+      std::fstream &fin = fins[ifile];
+      do {
+        readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
+      } while (header == 0 && fin.good());
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&data[0]), npuppi * sizeof(uint64_t));
       p_puppi->resize(npuppi);
@@ -269,10 +276,11 @@ int main(int argc, char **argv) {
       writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", output.c_str(), options);
     }
     timer.Start();
-    while (fin.good()) {
-      readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
-      if (header == 0)
-        continue;  // skip null padding
+    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+      std::fstream &fin = fins[ifile];
+      do {
+        readheader(fin, header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
+      } while (header == 0 && fin.good());
       p_puppi->resize(npuppi);
       if (npuppi)
         fin.read(reinterpret_cast<char *>(&*p_puppi->begin()), npuppi * sizeof(uint64_t));
@@ -287,6 +295,6 @@ int main(int argc, char **argv) {
   }
   timer.Stop();
   double tcpu = timer.CpuTime(), treal = timer.RealTime();
-  report(tcpu, treal, entries, argv[iarg + 2], output.empty() ? nullptr : output.c_str());
+  report(tcpu, treal, entries, ins, output);
   return 0;
 }

@@ -17,4 +17,3 @@ To make some speed benchmarks
 ```bash
 DATAFILE=/path/to/file.dump make run_test_speed
 ```
-Note that for the snapshot output, the JIT to determine the column types is dominating the timing even with O(1M) input entries.

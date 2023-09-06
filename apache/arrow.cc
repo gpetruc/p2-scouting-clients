@@ -18,7 +18,7 @@
 #include "../root/unpack.h"
 
 template <typename FltType, typename FltBuilderType = typename arrow::TypeTraits<FltType>::BuilderType>
-void run_ipc(std::fstream &fin,
+void run_ipc(std::vector<std::fstream> &fins,
              unsigned long &entries,
              unsigned long &nbatches,
              unsigned long batchsize,
@@ -83,10 +83,11 @@ void run_ipc(std::fstream &fin,
   if (output_file)
     batch_writer = *arrow::ipc::MakeStreamWriter(output_file, schema, options);
 
-  while (fin.good()) {
-    readevent(fin, header, run, bx, orbit, good, npuppi, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
-    if (header == 0)
-      continue;  // skip null padding
+  for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+    std::fstream &fin = fins[ifile];
+    do {
+      readevent(fin, header, run, bx, orbit, good, npuppi, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
+    } while (header == 0 && fin.good());
     b_run->Append(run);
     b_orbit->Append(orbit);
     b_bx->Append(bx);
@@ -121,7 +122,7 @@ void run_ipc(std::fstream &fin,
 }
 
 template <typename FltType, typename FltArrayType = typename arrow::TypeTraits<FltType>::ArrayType>
-void run_ipc_bulk(std::fstream &fin,
+void run_ipc_bulk(std::vector<std::fstream> &fins,
                   unsigned long &entries,
                   unsigned long &nbatches,
                   unsigned long batchsize,
@@ -171,10 +172,11 @@ void run_ipc_bulk(std::fstream &fin,
   unsigned int npuppitot = 0, capacity = batchsize;
   data.resize(capacity);
   bool good;
-  while (fin.good()) {
-    readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
-    if (header[e] == 0)
-      continue;  // skip null padding
+  for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+    std::fstream &fin = fins[ifile];
+    do {
+      readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
+    } while (header[e] == 0 && fin.good());
     b_good->Append(good);
     unsigned int lastvalid = offsets.back();
     offsets.emplace_back(offsets.back() + npuppi[e]);
@@ -235,7 +237,7 @@ void run_ipc_bulk(std::fstream &fin,
     batch_writer->Close();
 }
 
-void run_ipc_int_bulk(std::fstream &fin,
+void run_ipc_int_bulk(std::vector<std::fstream> &fins,
                       unsigned long &entries,
                       unsigned long &nbatches,
                       unsigned long batchsize,
@@ -285,10 +287,11 @@ void run_ipc_int_bulk(std::fstream &fin,
   unsigned int npuppitot = 0, capacity = batchsize;
   data.resize(capacity);
   bool good;
-  while (fin.good()) {
-    readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
-    if (header[e] == 0)
-      continue;  // skip null padding
+  for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+    std::fstream &fin = fins[ifile];
+    do {
+      readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
+    } while (header[e] == 0 && fin.good());
     b_good->Append(good);
     unsigned int lastvalid = offsets.back();
     offsets.emplace_back(offsets.back() + npuppi[e]);
@@ -351,7 +354,7 @@ void run_ipc_int_bulk(std::fstream &fin,
     batch_writer->Close();
 }
 
-void run_ipc_raw64_bulk(std::fstream &fin,
+void run_ipc_raw64_bulk(std::vector<std::fstream> &fins,
                         unsigned long &entries,
                         unsigned long &nbatches,
                         unsigned long batchsize,
@@ -387,10 +390,11 @@ void run_ipc_raw64_bulk(std::fstream &fin,
   unsigned int npuppitot = 0, capacity = batchsize;
   data.resize(capacity);
   bool good;
-  while (fin.good()) {
-    readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
-    if (header[e] == 0)
-      continue;  // skip null padding
+  for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+    std::fstream &fin = fins[ifile];
+    do {
+      readheader(fin, header[e], run[e], bx[e], orbit[e], good, npuppi[e]);
+    } while (header[e] == 0 && fin.good());
     b_good->Append(good);
     unsigned int lastvalid = offsets.back();
     offsets.emplace_back(offsets.back() + npuppi[e]);
@@ -434,6 +438,17 @@ void usage() {
   printf("  -b, --batchsize N: number of BXs per batch, default is 3564, one orbit at TM1 \n");
   printf("  -j, --cputhreads N: set the capacity of the global CPU thread pool\n");
   printf("  -J, --iothreads N: set the capacity of the global I/O thread pool\n");
+  printf("  -z algo[,level] : enable compression\n");
+  printf("                    for IPC files, algorithms supported are none, lz4, zstd\n");
+  printf("                    default level is 4\n");
+}
+
+bool is_output_fname(const std::string &fname) {
+  if (fname.length() > 6 && fname.substr(fname.length() - 6) == ".arrow")
+    return true;
+  if (fname.length() > 4 && fname.substr(fname.length() - 4) == ".ipc")
+    return true;
+  return false;
 }
 
 int main(int argc, char **argv) {
@@ -443,14 +458,17 @@ int main(int argc, char **argv) {
   }
   unsigned long batchsize = 3564;  // default is number of BXs in one LHC orbit
   unsigned int iothreads = -1, cputhreads = -1;
+  std::string compressionMethod = "none";
+  int compressionLevel = 4;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
                                            {"batchsize", required_argument, nullptr, 'b'},
                                            {"iothreads", required_argument, nullptr, 'J'},
                                            {"cputhreads", required_argument, nullptr, 'j'},
+                                           {"compression", required_argument, nullptr, 'z'},
                                            {nullptr, 0, nullptr, 0}};
     int option_index = 0;
-    int optc = getopt_long(argc, argv, "hj:J:b:", long_options, &option_index);
+    int optc = getopt_long(argc, argv, "hj:J:b:z:", long_options, &option_index);
     if (optc == -1)
       break;
 
@@ -469,6 +487,16 @@ int main(int argc, char **argv) {
         cputhreads = std::atoi(optarg);
         arrow::SetCpuThreadPoolCapacity(cputhreads);
         break;
+      case 'z': {
+        std::string compressionMethod = std::string(optarg);
+        auto pos = compressionMethod.find(",");
+        if (pos != std::string::npos) {
+          compressionLevel = std::atoi(compressionMethod.substr(pos + 1).c_str());
+          compressionMethod = compressionMethod.substr(0, pos);
+        } else {
+          compressionLevel = 4;
+        }
+      } break;
       default:
         usage();
         return 1;
@@ -476,19 +504,34 @@ int main(int argc, char **argv) {
   }
   int iarg = optind, narg = argc - optind;
 
-  const char *inname = argv[iarg + 1], *outname = nullptr;
-  std::fstream fin(inname, std::ios_base::in | std::ios_base::binary);
-  if (!fin.good()) {
-    printf("Error opening %s\n", inname);
-    return 2;
+  std::vector<std::string> ins;
+  std::vector<std::fstream> fins;
+  std::string output;
+
+  for (int i = iarg + 1; i < iarg + narg; ++i) {
+    std::string fname = argv[i];
+    if (is_output_fname(fname)) {
+      if (!output.empty()) {
+        printf("Multiple output arrow files specified in the command line\n");
+        return 2;
+      }
+      output = fname;
+    } else {  // assume it's an input file
+      ins.emplace_back(argv[i]);
+      fins.emplace_back(argv[i], std::ios_base::in | std::ios_base::binary);
+      if (!fins.back().good()) {
+        printf("Error opening %s\n", argv[iarg + 2]);
+        return 2;
+      }
+    }
   }
+
   std::string layout = std::string(argv[iarg]);
   unsigned long entries = 0, nbatches = 0;
   std::shared_ptr<arrow::io::FileOutputStream> output_file;
-  if (narg >= 3) {
-    outname = argv[iarg + 2];
-    printf("Will run with layout %s, writing to %s\n", argv[iarg], outname);
-    output_file = *arrow::io::FileOutputStream::Open(outname);
+  if (!output.empty()) {
+    printf("Will run with layout %s, writing to %s\n", argv[iarg], output.c_str());
+    output_file = *arrow::io::FileOutputStream::Open(output);
   } else {
     printf("Will run with layout %s\n", argv[iarg]);
   }
@@ -496,38 +539,36 @@ int main(int argc, char **argv) {
   tstart = std::chrono::steady_clock::now();
   arrow::ipc::IpcWriteOptions ipcWriteOptions = arrow::ipc::IpcWriteOptions::Defaults();
   if (layout.find("ipc_") == 0) {
-    if (narg >= 5) {
-      int lvl = std::atoi(argv[iarg + 4]);
-      std::string algo(argv[iarg + 3]);
-      if (algo == "lz4")
-        ipcWriteOptions.codec = *arrow::util::Codec::Create(arrow::Compression::LZ4_FRAME, lvl);
-      else if (algo == "zstd")
-        ipcWriteOptions.codec = *arrow::util::Codec::Create(arrow::Compression::ZSTD, lvl);
+    if (compressionMethod != "none") {
+      if (compressionMethod == "lz4")
+        ipcWriteOptions.codec = *arrow::util::Codec::Create(arrow::Compression::LZ4_FRAME, compressionLevel);
+      else if (compressionMethod == "zstd")
+        ipcWriteOptions.codec = *arrow::util::Codec::Create(arrow::Compression::ZSTD, compressionLevel);
       else {
-        printf("Unknown compression %s\n", algo.c_str());
+        printf("Unknown compression %s\n", compressionMethod.c_str());
         return 2;
       }
-      printf("Enabled compression %s at level %d\n", algo.c_str(), lvl);
+      printf("Enabled compression %s at level %d\n", compressionMethod.c_str(), compressionLevel);
     }
   }
 
   if (layout == "ipc_float") {
-    run_ipc<arrow::FloatType>(fin, entries, nbatches, batchsize, arrow::float32(), output_file, ipcWriteOptions);
+    run_ipc<arrow::FloatType>(fins, entries, nbatches, batchsize, arrow::float32(), output_file, ipcWriteOptions);
+  } else if (layout == "ipc_float16") {
+    run_ipc<arrow::HalfFloatType>(fins, entries, nbatches, batchsize, arrow::float16(), output_file, ipcWriteOptions);
   } else if (layout == "ipc_float_bulk") {
-    run_ipc_bulk<arrow::FloatType>(fin, entries, nbatches, batchsize, arrow::float32(), output_file, ipcWriteOptions);
+    run_ipc_bulk<arrow::FloatType>(fins, entries, nbatches, batchsize, arrow::float32(), output_file, ipcWriteOptions);
   } else if (layout == "ipc_float16_bulk") {
     run_ipc_bulk<arrow::HalfFloatType>(
-        fin, entries, nbatches, batchsize, arrow::float16(), output_file, ipcWriteOptions);
+        fins, entries, nbatches, batchsize, arrow::float16(), output_file, ipcWriteOptions);
   } else if (layout == "ipc_int_bulk") {
-    run_ipc_int_bulk(fin, entries, nbatches, batchsize, output_file, ipcWriteOptions);
+    run_ipc_int_bulk(fins, entries, nbatches, batchsize, output_file, ipcWriteOptions);
   } else if (layout == "ipc_raw64_bulk") {
-    run_ipc_raw64_bulk(fin, entries, nbatches, batchsize, output_file, ipcWriteOptions);
-  } else if (layout == "ipc_float16") {
-    run_ipc<arrow::HalfFloatType>(fin, entries, nbatches, batchsize, arrow::float16(), output_file, ipcWriteOptions);
+    run_ipc_raw64_bulk(fins, entries, nbatches, batchsize, output_file, ipcWriteOptions);
   }
   tend = std::chrono::steady_clock::now();
   double time = (std::chrono::duration<double>(tend - tstart)).count();
   if (batchsize)
     printf("Wrote %lu record batches of size %lu, %.1f kHz\n", nbatches, batchsize, nbatches / 1000. / time);
-  report(time, time, entries, inname, outname);
+  report(time, time, entries, ins, output);
 }

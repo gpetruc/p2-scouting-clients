@@ -6,4 +6,4 @@ The unpackers produce a RecordBatch where the Puppi objects are saved as a List 
 
 A simple validation can be run with `make run_test_unpack`, and some performance studies with `DATAFILE=/path/to/file make run_test_speed`
 
-The code is tested with Apache Arrow from `/cvmfs/sft.cern.ch/lcg/views/dev4cuda/latest/x86_64-centos8-gcc11-opt/setup.sh`
+The code is tested with Apache Arrow from `/cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/setup.sh`

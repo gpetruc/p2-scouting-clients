@@ -64,3 +64,11 @@ run_test_unpack: unpack.exe
 	done
 	@./unpack.exe combined raw64 data/SingleNeutrino.dump; \
 	@./unpack.exe combined raw64 data/SingleNeutrino.dump unpack_$${T}_$${M}.root; \
+
+run_test_multi: unpack.exe rntuple_unpack.exe
+	@for I in $$(seq 1 6); do cp -v $(DATAFILE) /run/user/$$UID/in$${I}.dump; done
+	@./unpack.exe combined float /run/user/$$UID/in{1,2,3,4,5,6}.dump;
+	@./unpack.exe combined float /run/user/$$UID/in{1,2,3,4,5,6}.dump;
+	@./rntuple_unpack.exe combined_coll float /run/user/$$UID/in{1,2,3,4,5,6}.dump
+	@./unpack.exe combined float  /run/user/$$UID/in{1,2,3,4,5,6}.dump /run/user/$$UID/out.root
+	@./rntuple_unpack.exe combined_coll float /run/user/$$UID/in{1,2,3,4,5,6}.dump /run/user/$$UID/out.root
