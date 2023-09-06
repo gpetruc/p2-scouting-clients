@@ -1,5 +1,5 @@
 CC = c++
-CCFLAGS = --std=c++17 -W -Wall -Wno-unused-variable -Ofast -march=native   $(shell root-config --cflags)
+CCFLAGS = -W -Wall -Wno-unused-variable -Ofast -march=native   $(shell root-config --cflags)
 LIBS = -lstdc++ $(shell root-config --ldflags --libs) -lROOTNTuple
 DATAFILE ?= data/SingleNeutrino.dump
 
@@ -47,13 +47,13 @@ run_test_speed: unpack.exe rntuple_unpack.exe
 
 run_test_comp: unpack.exe rntuple_unpack.exe
 	@echo "==== With LZ4 output ===="
-	@./unpack.exe -j 6 combined float24 $(DATAFILE) /run/user/$$UID/out.root lz4 4 
-	@./unpack.exe -j 6 combined float $(DATAFILE) /run/user/$$UID/out.root lz4 4
-	@./unpack.exe -j 6 combined float $(DATAFILE) /run/user/$$UID/out.root zstd 5
+	@./unpack.exe -j 6 combined float24 $(DATAFILE) /run/user/$$UID/out.root -z lz4,4 
+	@./unpack.exe -j 6 combined float $(DATAFILE) /run/user/$$UID/out.root -z lz4,4
+	@./unpack.exe -j 6 combined float $(DATAFILE) /run/user/$$UID/out.root -z zstd,5
 	@./rntuple_unpack.exe -j 6 combined float $(DATAFILE)  /run/user/$$UID/out.root lz4 4
-	@./rntuple_unpack.exe -j 6 combined_coll float $(DATAFILE)  /run/user/$$UID/out.root lz4 4
-	@./rntuple_unpack.exe -j 6 combined_coll float $(DATAFILE)  /run/user/$$UID/out.root zstd 5
-	@./rntuple_unpack.exe -j 6 combined_struct float $(DATAFILE)  /run/user/$$UID/out.root lz4 4
+	@./rntuple_unpack.exe -j 6 combined_coll float $(DATAFILE)  /run/user/$$UID/out.root -z lz4,4
+	@./rntuple_unpack.exe -j 6 combined_coll float $(DATAFILE)  /run/user/$$UID/out.root -z zstd,5
+	@./rntuple_unpack.exe -j 6 combined_struct float $(DATAFILE)  /run/user/$$UID/out.root -z lz4,4
 
 run_test_unpack: unpack.exe
 	@for T in float float24 int; do  \

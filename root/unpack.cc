@@ -7,62 +7,106 @@
 #include <TROOT.h>
 #include <TStopwatch.h>
 #include <string>
+#include <getopt.h>
+
 #include "unpack.h"
 
 void usage() {
-  printf("Usage: unpack.exe [-j N] <layout> <type> infile.dump [ outfile.root [ <compression> <level> ]\n");
+  printf("Usage: unpack.exe [ options ] <layout> <type> infile.dump [ outfile.root ]\n");
   printf("  layout := separate | combined\n");
-  printf("  type   := float | float24 | int\n");
-  printf("  compression := lzma | zlib | lz4 | zstd\n");
+  printf("  type   := float | float24 | int | raw64\n");
+  printf("Options: \n");
+  printf("  -j N            : multithread with N threads\n");
+  printf("  -z algo[,level] : enable compression\n");
+  printf("                    algorithms supported are none, lzma, zlib, lz4, zstd;\n");
+  printf("                    default level is 4\n");
 }
 int main(int argc, char **argv) {
   if (argc < 3) {
     usage();
     return 1;
   }
-  int iarg = 1, narg = argc - 1;
-  if (std::string(argv[iarg]) == "-j") {
-    ROOT::EnableImplicitMT(std::stoi(argv[iarg + 1]));
-    printf("Enabled Implicit MT with %d threads\n", std::stoi(argv[iarg + 1]));
-    iarg += 2;
-    narg -= 2;
+  int compressionAlgo, compressionLevel = 0;
+  while (1) {
+    static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
+                                           {"threads", required_argument, nullptr, 'j'},
+                                           {"compression", required_argument, nullptr, 'z'},
+                                           {nullptr, 0, nullptr, 0}};
+    int option_index = 0;
+    int optc = getopt_long(argc, argv, "hj:z:", long_options, &option_index);
+    if (optc == -1)
+      break;
+
+    switch (optc) {
+      case 'h':
+        usage();
+        return 0;
+      case 'j': {
+        int threads = std::atoi(optarg);
+        if (threads != -1) {
+          ROOT::EnableImplicitMT(threads);
+          printf("Enabled Implicit MT with %d threads\n", threads);
+        }
+      } break;
+      case 'z': {
+        std::string compressionMethod = std::string(optarg);
+        auto pos = compressionMethod.find(",");
+        if (pos != std::string::npos) {
+          compressionLevel = std::atoi(compressionMethod.substr(pos + 1).c_str());
+          compressionMethod = compressionMethod.substr(0, pos);
+        } else {
+          compressionLevel = 4;
+        }
+        if (compressionMethod == "none") {
+          compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZLIB;
+          compressionLevel = 0;
+        } else if (compressionMethod == "lzma")
+          compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kLZMA;
+        else if (compressionMethod == "zlib")
+          compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZLIB;
+        else if (compressionMethod == "lz4")
+          compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kLZ4;
+        else if (compressionMethod == "zstd")
+          compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZSTD;
+        else {
+          printf("Unsupported compression algo %s\n", optarg);
+          return 1;
+        }
+      } break;
+      default:
+        usage();
+        return 1;
+    }
   }
-  std::string method = std::string(argv[iarg]);
-  std::string type = std::string(argv[iarg + 1]);
+
+  int iarg = optind, narg = argc - optind;
+  std::string method = std::string(argv[iarg]), type = std::string(argv[iarg + 1]);
   printf("Will run with method %s, type %s\n", argv[iarg], argv[iarg + 1]);
   std::fstream fin(argv[iarg + 2], std::ios_base::in | std::ios_base::binary);
   if (!fin.good()) {
     printf("Error opening %s\n", argv[iarg + 2]);
     return 2;
   }
-
-  int compressionAlgo, compressionLevel = 0;
-  if (narg >= 6) {
-    std::string compressionName(argv[iarg + 4]);
-    if (compressionName == "lzma")
-      compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kLZMA;
-    else if (compressionName == "zlib")
-      compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZLIB;
-    else if (compressionName == "lz4")
-      compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kLZ4;
-    else if (compressionName == "zstd")
-      compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZSTD;
-    else {
-      printf("Unsupported compression algo %s\n", argv[iarg + 2]);
-      return 1;
-    }
-    compressionLevel = std::stoi(argv[iarg + 5]);
-  }
-
   TFile *fout = nullptr;
   TTree *tree = nullptr;
-  if (narg > 3) {
-    fout = TFile::Open(argv[iarg + 3], "RECREATE", "", compressionLevel);
-    if (fout == nullptr || !fout)
-      return 2;
-    if (compressionLevel)
-      fout->SetCompressionAlgorithm(compressionAlgo);
-    tree = new TTree("Events", "Events");
+  std::string output;
+  for (int i = iarg+3; i < iarg + narg; ++i) {
+    std::string fname = argv[i];
+    if (fname.length() > 5 && fname.substr(fname.length()-5) == ".root") {
+      if (fout != nullptr) {
+        printf("Multiple output root files specified in the command line\n");
+        return 2;
+      }
+      output = fname;
+      fout = TFile::Open(argv[i], "RECREATE", "", compressionLevel);
+      if (fout == nullptr || !fout) {
+        printf("Error opening root file %s for output\n", argv[i]);
+        return 2;
+      }
+      if (compressionLevel)
+        fout->SetCompressionAlgorithm(compressionAlgo);
+      tree = new TTree("Events", "Events");
+    }
   }
 
   TStopwatch timer;
@@ -345,6 +389,6 @@ int main(int argc, char **argv) {
   }
   timer.Stop();
   double tcpu = timer.CpuTime(), treal = timer.RealTime();
-  report(tcpu, treal, entries, argv[iarg + 2], narg > 3 ? argv[iarg + 3] : nullptr);
+  report(tcpu, treal, entries, argv[iarg + 2], output.empty() ? nullptr : output.c_str());
   return 0;
 }

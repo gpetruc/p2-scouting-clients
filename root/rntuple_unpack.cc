@@ -8,14 +8,20 @@
 #include <ROOT/RLogger.hxx>
 #include <TStopwatch.h>
 #include <string>
+#include <getopt.h>
+
 #include "unpack.h"
 #include "puppi.h"
 
 void usage() {
-  printf("Usage: rntuple_unpack.exe [-j N] <layout> <type> infile.dump [ outfile.root [ <compression> <level> ]\n");
+  printf("Usage: rntuple_unpack.exe [options] <layout> <type> infile.dump [ outfile.root ]\n");
   printf("  layout := combined | combined_coll | combined_struct\n");
-  printf("  type   := float\n");
-  printf("  compression := lzma | zlib | lz4 | zstd\n");
+  printf("  type   := float | raw64\n");
+  printf("Options: \n");
+  printf("  -j N            : multithread with N threads\n");
+  printf("  -z algo[,level] : enable compression\n");
+  printf("                    algorithms supported are none, lzma, zlib, lz4, zstd;\n");
+  printf("                    default level is 4\n");
 }
 int main(int argc, char **argv) {
   if (argc < 3) {
@@ -23,13 +29,58 @@ int main(int argc, char **argv) {
   }
   auto verbosity =
       ROOT::Experimental::RLogScopedVerbosity(ROOT::Experimental::NTupleLog(), ROOT::Experimental::ELogLevel::kError);
-  int iarg = 1, narg = argc - 1;
-  if (std::string(argv[iarg]) == "-j") {
-    ROOT::EnableImplicitMT(std::stoi(argv[iarg + 1]));
-    printf("Enabled Implicit MT with %d threads\n", std::stoi(argv[iarg + 1]));
-    iarg += 2;
-    narg -= 2;
+  int compressionLevel = 0;
+  while (1) {
+    static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
+                                           {"threads", required_argument, nullptr, 'j'},
+                                           {"compression", required_argument, nullptr, 'z'},
+                                           {nullptr, 0, nullptr, 0}};
+    int option_index = 0;
+    int optc = getopt_long(argc, argv, "hj:z:", long_options, &option_index);
+    if (optc == -1)
+      break;
+
+    switch (optc) {
+      case 'h':
+        usage();
+        return 0;
+      case 'j': {
+        int threads = std::atoi(optarg);
+        if (threads != -1) {
+          ROOT::EnableImplicitMT(threads);
+          printf("Enabled Implicit MT with %d threads\n", threads);
+        }
+      } break;
+      case 'z': {
+        std::string compressionMethod = std::string(optarg);
+        auto pos = compressionMethod.find(",");
+        if (pos != std::string::npos) {
+          compressionLevel = std::atoi(compressionMethod.substr(pos + 1).c_str());
+          compressionMethod = compressionMethod.substr(0, pos);
+        } else {
+          compressionLevel = 4;
+        }
+        if (compressionMethod == "none") {
+          compressionLevel = 0;
+        } else if (compressionMethod == "lzma")
+          compressionLevel = ROOT::CompressionSettings(ROOT::kLZMA, compressionLevel);
+        else if (compressionMethod == "zlib")
+          compressionLevel = ROOT::CompressionSettings(ROOT::kZLIB, compressionLevel);
+        else if (compressionMethod == "lz4")
+          compressionLevel = ROOT::CompressionSettings(ROOT::kLZ4, compressionLevel);
+        else if (compressionMethod == "zstd")
+          compressionLevel = ROOT::CompressionSettings(ROOT::kZSTD, compressionLevel);
+        else {
+          printf("Unsupported compression algo %s\n", optarg);
+          return 1;
+        }
+      } break;
+      default:
+        usage();
+        return 1;
+    }
   }
+  int iarg = optind, narg = argc - optind;
   std::string method = std::string(argv[iarg]);
   std::string type = std::string(argv[iarg + 1]);
   printf("Will run RTNuple with method %s, type %s\n", argv[iarg], argv[iarg + 1]);
@@ -39,26 +90,17 @@ int main(int argc, char **argv) {
     return 2;
   }
 
-  int compressionLevel = 0;
-  int compression = 0;
-  if (narg >= 6) {
-    std::string compressionName(argv[iarg + 4]);
-    compressionLevel = std::stoi(argv[iarg + 5]);
-    if (compressionName == "lzma")
-      compression = ROOT::CompressionSettings(ROOT::kLZMA, compressionLevel);
-    else if (compressionName == "zlib")
-      compression = ROOT::CompressionSettings(ROOT::kZLIB, compressionLevel);
-    else if (compressionName == "lz4")
-      compression = ROOT::CompressionSettings(ROOT::kLZ4, compressionLevel);
-    else if (compressionName == "zstd")
-      compression = ROOT::CompressionSettings(ROOT::kZSTD, compressionLevel);
-    else {
-      printf("Unsupported compression algo %s\n", argv[iarg + 4]);
-      return 1;
+  std::string output;
+  for (int i = iarg+3; i < iarg + narg; ++i) {
+    std::string fname = argv[i];
+    if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".root") {
+      if (!output.empty()) {
+        printf("Multiple output root files specified in the command line\n");
+        return 2;
+      }
+      output = fname;
     }
   }
-
-  const char *foutname = (narg > 3) ? argv[iarg + 3] : nullptr;
 
   TStopwatch timer;
   unsigned long entries = 0;
@@ -81,10 +123,10 @@ int main(int argc, char **argv) {
     auto p_quality = model->MakeField<std::vector<uint8_t>>("Puppi_quality");
 
     std::unique_ptr<ROOT::Experimental::RNTupleWriter> writer;
-    if (foutname) {
+    if (!output.empty()) {
       ROOT::Experimental::RNTupleWriteOptions options;
-      options.SetCompression(compression);
-      writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", foutname, options);
+      options.SetCompression(compressionLevel);
+      writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", output.c_str(), options);
     }
     timer.Start();
     while (fin.good()) {
@@ -138,10 +180,10 @@ int main(int argc, char **argv) {
     auto c_puppi = model->MakeCollection("Puppi", std::move(submodel));
 
     std::unique_ptr<ROOT::Experimental::RNTupleWriter> writer;
-    if (foutname) {
+    if (!output.empty()) {
       ROOT::Experimental::RNTupleWriteOptions options;
-      options.SetCompression(compression);
-      writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", foutname, options);
+      options.SetCompression(compressionLevel);
+      writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", output.c_str(), options);
     }
     uint16_t npuppi;
     timer.Start();
@@ -179,10 +221,10 @@ int main(int argc, char **argv) {
     auto p_puppi = model->MakeField<std::vector<Puppi>>("Puppi");
 
     std::unique_ptr<ROOT::Experimental::RNTupleWriter> writer;
-    if (foutname) {
+    if (!output.empty()) {
       ROOT::Experimental::RNTupleWriteOptions options;
-      options.SetCompression(compression);
-      writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", foutname, options);
+      options.SetCompression(compressionLevel);
+      writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", output.c_str(), options);
     }
     uint16_t npuppi;
     timer.Start();
@@ -221,10 +263,10 @@ int main(int argc, char **argv) {
     uint64_t header;
 
     std::unique_ptr<ROOT::Experimental::RNTupleWriter> writer;
-    if (foutname) {
+    if (!output.empty()) {
       ROOT::Experimental::RNTupleWriteOptions options;
-      options.SetCompression(compression);
-      writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", foutname, options);
+      options.SetCompression(compressionLevel);
+      writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", output.c_str(), options);
     }
     timer.Start();
     while (fin.good()) {
@@ -245,6 +287,6 @@ int main(int argc, char **argv) {
   }
   timer.Stop();
   double tcpu = timer.CpuTime(), treal = timer.RealTime();
-  report(tcpu, treal, entries, argv[iarg + 2], narg > 3 ? argv[iarg + 3] : nullptr);
+  report(tcpu, treal, entries, argv[iarg + 2], output.empty() ? nullptr : output.c_str());
   return 0;
 }
