@@ -54,7 +54,9 @@ make && make run_tests
 ```
 ./data_checker.exe [options] Mode Source [arguments]
 ```
+
 *Source* can be a file, including a named fifo, or a TCP/IP "address:port". If a `%d` is found in the file name, it's replaced by the index of the client (starting from zero).
+
 *Modes* that receive the data and perform some validity checks on it are:
  * `Native64`, `Native128`: files in the formats described above
  * `Native64SZ`: file in `Native64` format but allowing possible null 64 bit words between events
@@ -63,13 +65,16 @@ make && make run_tests
  * `DTHBasicOA-NoSR`: same format as `DTHBasicOA` but without SlinkRocket headers and trailers 
  * `DTHBasic256`, `DTHBasic256-NC`: read DTHBasic256 format. The `-NC` version only checks DTH headers and not the contents of the orbit payload itself.
  * `DTHBasic256`, `DTHBasic256-NC`: read DTHBasic256 format. The `-NC` version only checks DTH headers and not the contents of the orbit payload itself.
+
 *Modes* that receive and store some data are:
  * `DTHReceiveOA`: when used as `data_checker.exe DTHReceiveOA source output [prescale]` it will receive in `DTHBasicOA` format and saves a prescaled amount of orbits out in `Native128` format. The default prescale is 100. It stops after collecting 4GB of data.
  * `DTHReceive256`: when used as `data_checker.exe DTHReceive256 source output [prescale]` it will receive in `DTHBasic256` format and saves a prescaled amount of orbits out in `Native64` format with up to 3 null 64-bit words at the end of each orbit (so, it can be read back with `Native64SZ`). The default prescale is 100. It stops after collecting 4GB of data.
  * `DTHRollingReceive256`: when used as `data_checker.exe DTHRollingReceive256 source outputBasePath orbitsPerFile` it will receive in `DTHBasic256` format and saves data out in `Native64` format with up to 3 null 64-bit words at the end of each orbit (so, it can be read back with `Native64SZ`), with a specified number of orbits per file. Outputs are saved as outputBasePath + `tsNN.orbNNNNNNNN.dump` where NN is the timeslice index (argument of option `-t`) and `NNNNNNNN` is the orbit number of the first orbit in the file.
+
 *Modes* for debugging are
  * `TrashData`: receive data via TCP/IP and discard it without any processing
  * `ReceiveAndStore`: when used as `data_checker.exe ReceiveAndStore source sizeInGB outputFile`: receive data up to sizeInGB data and save it in outputFile without any processing.
+
 Useful *options* are:
  * `-h`: lists all the options
  * `-n`: receives `n` streams instead of 1. For TCP/IP, the streams receive on consecutive ports, so receiving e.g. on port 7777 with `-n 2` will open a server on 7777 and one on 7778. For files, a `%d` has to be specified in the file name. 
@@ -86,7 +91,7 @@ The even generator reads some events in `Native64` format, and resamples them in
 
 Supported *modes* at the moment are just  `Native64` and `DTHBasic256`
 
-*Destinations* can be files or fifos (possibly with a `%d`` in the name, when generating multiple streams), or `ip:port` for TCP connections.
+*Destinations* can be files or fifos (possibly with a `%d` in the name, when generating multiple streams), or `ip:port` for TCP connections.
 
 Useful *options* are:
  * `-n N`: generate N streams of data
