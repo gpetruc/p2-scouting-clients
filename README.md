@@ -44,8 +44,67 @@ Two small example data files in **DTHBasic** and **DTHBasicOA** formats are avai
 
  ## Main
 
-This directory contains a single C++ client `data_checker` that can receive data via TCP/IP or read it from files, and check different formats.
+This directory contains a single C++ client `data_checker` that can receive data via TCP/IP or read it from files, and check different formats, and a dummy data generator `data_generator` that can output data.
 
  ```cpp
 make && make run_tests
  ```
+### Data checker & receiver
+
+```
+./data_checker.exe [options] Mode Source [arguments]
+```
+*Source* can be a file, including a named fifo, or a TCP/IP "address:port". If a `%d` is found in the file name, it's replaced by the index of the client (starting from zero).
+*Modes* that receive the data and perform some validity checks on it are:
+ * `Native64`, `Native128`: files in the formats described above
+ * `Native64SZ`: file in `Native64` format but allowing possible null 64 bit words between events
+ * `DTHBasic`, `DTHBasicOA`: as described above, but note that the non-OA is not really supported in recent DTH firmwares
+ * `DTHBasicOA-NC`: read `DTHBasicOA` format but only validates the DTH header, not the events inside
+ * `DTHBasicOA-NoSR`: same format as `DTHBasicOA` but without SlinkRocket headers and trailers 
+ * `DTHBasic256`, `DTHBasic256-NC`: read DTHBasic256 format. The `-NC` version only checks DTH headers and not the contents of the orbit payload itself.
+ * `DTHBasic256`, `DTHBasic256-NC`: read DTHBasic256 format. The `-NC` version only checks DTH headers and not the contents of the orbit payload itself.
+*Modes* that receive and store some data are:
+ * `DTHReceiveOA`: when used as `data_checker.exe DTHReceiveOA source output [prescale]` it will receive in `DTHBasicOA` format and saves a prescaled amount of orbits out in `Native128` format. The default prescale is 100. It stops after collecting 4GB of data.
+ * `DTHReceive256`: when used as `data_checker.exe DTHReceive256 source output [prescale]` it will receive in `DTHBasic256` format and saves a prescaled amount of orbits out in `Native64` format with up to 3 null 64-bit words at the end of each orbit (so, it can be read back with `Native64SZ`). The default prescale is 100. It stops after collecting 4GB of data.
+ * `DTHRollingReceive256`: when used as `data_checker.exe DTHRollingReceive256 source outputBasePath orbitsPerFile` it will receive in `DTHBasic256` format and saves data out in `Native64` format with up to 3 null 64-bit words at the end of each orbit (so, it can be read back with `Native64SZ`), with a specified number of orbits per file. Outputs are saved as outputBasePath + `tsNN.orbNNNNNNNN.dump` where NN is the timeslice index (argument of option `-t`) and `NNNNNNNN` is the orbit number of the first orbit in the file.
+*Modes* for debugging are
+ * `TrashData`: receive data via TCP/IP and discard it without any processing
+ * `ReceiveAndStore`: when used as `data_checker.exe ReceiveAndStore source sizeInGB outputFile`: receive data up to sizeInGB data and save it in outputFile without any processing.
+Useful *options* are:
+ * `-h`: lists all the options
+ * `-n`: receives `n` streams instead of 1. For TCP/IP, the streams receive on consecutive ports, so receiving e.g. on port 7777 with `-n 2` will open a server on 7777 and one on 7778. For files, a `%d` has to be specified in the file name. 
+  * Normally, the timeslice index is incremented for each stream, so stream 0 expects timeslice 0, stream 1 expects timeslice 1, etc (this is not done if `--orbitmux N` is specified with N > 1)
+ * `-k`: restart the servers after the connection is closed (use `<ctrl>+c` to terminate the job)
+ * `--maxorbits N`: stops after processing N orbits)
+
+### Event generator
+
+The even generator reads some events in `Native64` format, and resamples them in order to generate a stream of data.
+```
+./data_generator.exe [options] Mode root/data/SingleNeutrino.dump Destination
+```
+
+Supported *modes* at the moment are just  `Native64` and `DTHBasic256`
+
+*Destinations* can be files or fifos (possibly with a `%d`` in the name, when generating multiple streams), or `ip:port` for TCP connections.
+
+Useful *options* are:
+ * `-n N`: generate N streams of data
+ * `--orbits N` specifies how many orbits to generate
+
+#### Example of data generation and receiving with 2 streams, in DTH256 format
+
+In a first shell, do
+```bash
+make all
+mkfifo /run/user/$UID/tmpfifo.0
+mkfifo /run/user/$UID/tmpfifo.1
+./data_checker.exe DTHRollingReceive256 /run/user/$UID/tmpfifo.%d /run/user/$UID/raw 1000 -n 2
+```
+in a second shell do
+```bash
+./data_generator.exe DTHBasic256 root/data/SingleNeutrino.dump  /run/user/$UID/tmpfifo.%d --orbits 10000 -n 2
+```
+
+TCP/IP can also be used, but FIFOs are faster.
+

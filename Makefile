@@ -1,10 +1,10 @@
 CC = c++
-CCFLAGS = --std=c++17 -march=native -W -Wall  -O3
+CCFLAGS = --std=c++17 -march=native -W -Wall  -Ofast -ggdb
 LIBS = -lstdc++ -lpthread
 
 .PHONY: clean format run_tests
 
-all: data_checker.exe 
+all: data_checker.exe  data_generator.exe
 
 %.exe : %.cc
 	$(CC) $(CCFLAGS) $(LIBS) $< -o $@

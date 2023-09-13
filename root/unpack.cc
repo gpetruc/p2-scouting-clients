@@ -26,7 +26,7 @@ int main(int argc, char **argv) {
     usage();
     return 1;
   }
-  int compressionAlgo, compressionLevel = 0;
+  int compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZLIB, compressionLevel = 0;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
                                            {"threads", required_argument, nullptr, 'j'},

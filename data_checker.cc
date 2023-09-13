@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <cassert>
+#include <cmath>
 #include <exception>
 #include <vector>
 
@@ -429,7 +430,7 @@ public:
           truncated = (evh.npuppi == 0) && evh.err;
         }
         puppis_ += evh.npuppi;
-        if (!truncated)
+        if (!truncated && n64 > 1)
           skip(in, 8 * (n64 - 1));
         countEventsAndOrbits(evh.orbit, evh.bx, truncated);
         if (events_ % nprint == 0) {
@@ -1003,6 +1004,139 @@ protected:
   std::fstream fout_;
 };
 
+class DTHRollingReceive256 : public DTHBasicChecker256 {
+public:
+  DTHRollingReceive256(unsigned int orbSize_kb, const char *basepath, unsigned int orbitsPerFile)
+      : DTHBasicChecker256(orbSize_kb), orbitsPerFile_(orbitsPerFile), basepath_(basepath), fname_(), fout_() {}
+
+  ~DTHRollingReceive256() override {}
+
+  void newFile(uint32_t orbitNo) {
+    if (fout_.is_open())
+      fout_.close();
+    char buff[1024];
+    snprintf(buff, 1023, "%s.ts%02d.orb%08u.dump", basepath_.c_str(), firstbx_, orbitNo);
+    fout_.open(buff, std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
+    printf("%02u: opening output file %s\n", id_, buff);
+  }
+
+  int run(int in) override {
+    int ret = 0;
+    uint8_t buff256[32];
+    uint64_t buff64;
+    uint8_t *orbit_buff = reinterpret_cast<uint8_t *>(std::aligned_alloc(4096u, orbSize_));
+    unsigned int nprint = 100;
+    auto tstart = std::chrono::steady_clock::now();
+    bool isfirst = true;
+    int toprint = nprint;
+    unsigned long int readBytes = 0, wroteBytes = 0;
+    try {
+      while (good(in) && orbits_ <= maxorbits_) {
+        uint8_t *ptr = orbit_buff, *end = orbit_buff + orbSize_;
+        DTH_Header256 dthh = readDTH256(in, buff256, true, false);
+        if (isfirst) {
+          tstart = std::chrono::steady_clock::now();
+          isfirst = false;
+        }
+        uint32_t totlen256 = dthh.size256;
+        assert(ptr + (dthh.size256 << 5) < end);
+        try {
+          dthh.ok = readChunk(in, ptr, dthh.size256);
+          while (dthh.ok && !dthh.end) {
+            dthh = readDTH256(in, buff256, false, false);
+            if (!dthh.ok)
+              break;
+            totlen256 += dthh.size256;
+            assert(ptr + (dthh.size256 << 5) < end);
+            dthh.ok = readChunk(in, ptr, dthh.size256);
+          }
+        } catch (const std::exception &e) {
+          printf("%02u: Exception was raised in reading DTH frame:\n%s\n", id_, e.what());
+          std::fstream dth_debug_dump("dth_debug.dump",
+                                      std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
+          dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), (totlen256 << 5));
+          buff64 = 0x4441454444414544;
+          dth_debug_dump.write(reinterpret_cast<char *>(&buff64), 8);
+          dth_debug_dump.write(reinterpret_cast<char *>(&buff64), 8);
+          dth_debug_dump.write(reinterpret_cast<char *>(buff256), 32);
+          for (int i = 0; i < 5; ++i) {
+            int n = read(in, reinterpret_cast<char *>(orbit_buff), orbSize_);
+            if (n <= 0)
+              break;
+            dth_debug_dump.write(reinterpret_cast<char *>(orbit_buff), n);
+          }
+          printf("Dumped some data in dth_debug.dump\n");
+          ret = 1;
+          throw e;
+        }
+        if (!dthh.ok)
+          break;
+        orbits_++;
+        ptr = orbit_buff;
+        end = ptr + (totlen256 << 5);
+        PuppiOrbitHeader oh;
+        if (totlen256 <= 1) {
+          truncorbits_++;
+          if (totlen256 == 1) {
+            oh = readPuppiOrbitHeader(ptr, end, buff64);
+          } else {
+            oh.length = 0;
+            oh.orbit = 0;
+            oh.err = true;
+          }
+        } else {
+          PuppiHeader evh = readPuppiHeader(ptr, end, buff64);
+          oh.length = totlen256 << 5;
+          oh.orbit = evh.orbit;
+          oh.err = false;
+        }
+        readBytes += totlen256 << 5;
+        if (!fout_.is_open() || oh.orbit % orbitsPerFile_ == orbitMux_)
+          newFile(oh.orbit);
+        fout_.write(reinterpret_cast<char *>(orbit_buff), totlen256 << 5);
+        wroteBytes += totlen256 << 5;
+        if (--toprint == 0) {
+          printf("%02u: Read %7u orbits (%7u truncated, %.4f%%), %9.3f GB. Wrote %6.3f GB.\n",
+                 id_,
+                 orbits_.load(),
+                 truncorbits_.load(),
+                 truncorbits_.load() * 100.0 / orbits_.load(),
+                 readBytes / (1024. * 1024. * 1024.),
+                 wroteBytes / (1024. * 1024. * 1024.));
+          nprint = std::min(nprint << 1, 10000u);
+          toprint = nprint;
+        }
+      }
+    } catch (const std::exception &e) {
+      printf("%02u: Terminating an exception was raised:\n%s\n", id_, e.what());
+      ret = 1;
+    }
+    auto tend = std::chrono::steady_clock::now();
+    std::chrono::duration<double> dt = tend - tstart;
+    double readRate = readBytes / 1024.0 / 1024.0 / 1024.0 / dt.count();
+    double wroteRate = wroteBytes / 1024.0 / 1024.0 / 1024.0 / dt.count();
+    printf("%02u: Read %u orbits (%u truncated, %.4f%%), %.3f GB\n",
+           id_,
+           orbits_.load(),
+           truncorbits_.load(),
+           truncorbits_.load() * 100.0 / orbits_.load(),
+           readBytes / (1024. * 1024. * 1024.));
+    printf("%02u: Wrote %.3f GB to %s\n", id_, wroteBytes / (1024. * 1024. * 1024.), fname_.c_str());
+    printf("%02u: Data rate in %.3f GB/s, out %.3f GB/s\n", id_, readRate, wroteRate);
+    printf("\n");
+    std::free(orbit_buff);
+    if (fout_.is_open())
+      fout_.close();
+    return ret;
+  }
+
+protected:
+  unsigned int orbitsPerFile_;
+  std::string basepath_, fname_;
+  std::fstream fout_;
+  bool checkData_;
+};
+
 int setup_tcp(const char *addr, const char *port, unsigned int port_offs = 0) {
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0) {
@@ -1051,8 +1185,14 @@ int open_file(const char *fname) {
 int open_source(const std::string &src, unsigned int iclient = 0) {
   auto pos = src.find(':');
   if (pos == std::string::npos) {
-    assert(iclient == 0);
-    return open_file(src.c_str());
+    pos = src.find("%d");
+    if (pos == std::string::npos) {
+      assert(iclient == 0);
+      return open_file(src.c_str());
+    } else {
+      std::string myfile = src.substr(0, pos) + std::to_string(iclient) + src.substr(pos + 2);
+      return open_file(myfile.c_str());
+    }
   } else {
     std::string ip = src.substr(0, pos), port = src.substr(pos + 1);
     return receive_tcp(ip.c_str(), port.c_str(), iclient);
@@ -1089,11 +1229,11 @@ protected:
 
 class ReceiveAndStore : public CheckerBase {
 public:
-  ReceiveAndStore(unsigned int readSize_kb, unsigned int buffSize_kb, unsigned int fileSize_gb, const char *fname)
+  ReceiveAndStore(unsigned int readSize_kb, unsigned int buffSize_kb, double fileSize_gb, const char *fname)
       : CheckerBase(),
         readSize_(readSize_kb * 1024),
         buffSize_(buffSize_kb * 1024),
-        nbuffs_(fileSize_gb * 1024 / (buffSize_kb / 1024)),
+        nbuffs_(std::ceil(fileSize_gb * 1024 / (buffSize_kb / 1024))),
         buffs_(nbuffs_),
         sizes_(nbuffs_, -1),
         fname_(fname) {
@@ -1290,6 +1430,12 @@ int main(int argc, char **argv) {
       }
       unsigned int prescale = (nargs == 3) ? 100 : std::atoi(argv[optind + 1]);
       checker.reset(new DTHReceive256(orbsize_kb, argv[optind], prescale));
+    } else if (kind == "DTHRollingReceive256") {
+      if (nargs != 4) {
+        printf("Usage: %s DTHRollingReceive256 ip:port outfile orbitsPerFile \n", argv[0]);
+        return 3;
+      }
+      checker.reset(new DTHRollingReceive256(orbsize_kb, argv[optind], std::atoi(argv[optind + 1])));
     } else if (kind == "TrashData") {
       checker.reset(new TrashData(buffsize_kb));
     } else if (kind == "ReceiveAndStore") {
@@ -1297,7 +1443,7 @@ int main(int argc, char **argv) {
         printf("Usage: %s ReceiveAndStore ip:port filesize_Gb outfile\n", argv[0]);
         return 3;
       }
-      checker.reset(new ReceiveAndStore(buffsize_kb, orbsize_kb, std::atoi(argv[optind]), argv[optind + 1]));
+      checker.reset(new ReceiveAndStore(buffsize_kb, orbsize_kb, std::atof(argv[optind]), argv[optind + 1]));
     } else {
       printf("Unsupported mode '%s'\n", kind.c_str());
       return 3;
