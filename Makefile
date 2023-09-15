@@ -15,9 +15,9 @@ format:
 	@cd root && make format
 
 clean:
-	@rm *.exe
+	@rm *.exe *.data
 
-run_tests: data_checker.exe
+run_tests: data_checker.exe data_generator.exe
 	@echo "Running basic file tests"
 	./data_checker.exe DTHBasic data/tcp_genx4.data
 	./data_checker.exe DTHBasicOA data/tcp_genx4_OA.data

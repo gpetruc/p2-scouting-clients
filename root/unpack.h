@@ -1,3 +1,5 @@
+#ifndef p2_clients_root_unpack_h
+#define p2_clients_root_unpack_h
 #include <cstdio>
 #include <cstdint>
 #include <fstream>
@@ -337,6 +339,51 @@ inline void readevent(std::fstream &fin,
   }
 }
 
+#if 0
+inline void readgmt(std::fstream &fin,
+                      uint64_t &header,
+                      uint16_t &run,
+                      uint16_t &bx,
+                      uint32_t &orbit,
+                      bool &good,
+                      uint16_t &nmu,
+                      uint64_t (&data)[255],
+                      uint16_t (&pt)[255],
+                      int16_t (&eta)[255],
+                      int16_t (&phi)[255],
+                      int8_t (&charge)[255],
+                      int16_t (&z0)[255],
+                      int16_t (&dxy)[255],
+                      uint16_t (&quality)[255],
+                      uint16_t (&wpuppi)[255],
+                      uint16_t (&id)[255]) {  //int, combined
+  uint16_t nwords;
+  readheader(fin, header, run, bx, orbit, good, nwords);
+  if (nwords)
+    fin.read(reinterpret_cast<char *>(&data[0]), nwords * sizeof(uint64_t));
+  nmu = (nwords*3)/2;
+  uint32_t *data32 = reinterpret_cast<uint32_t *>(data);
+  uint32_t *ptr32 = data32;
+  for (uint16_t i = 0; i < mu; ++i) {
+    pt  = ((*ptr32) >> 1) & 0xFFFFF;
+    phi = ((*ptr32) >> 17) & ((1<<13)-1);
+    eta = ((*ptr32) >> 17) & ((1<<13)-1);
+    readshared(data[i], pt[i], eta[i], phi[i]);
+    pid[i] = (data[i] >> 37) & 0x7;
+    if (pid[i] > 1) {
+      readcharged(data[i], z0[i], dxy[i], quality[i]);
+      wpuppi[i] = 0;
+      id[i] = 0;
+    } else {
+      readneutral(data[i], wpuppi[i], id[i]);
+      z0[i] = 0;
+      dxy[i] = 0;
+      quality[i] = 0;
+    }
+  }
+}
+#endif
+
 inline void report(double tcpu, double treal, int entries, float insize, float outsize) {
   float inrate = insize / (1024. * 1024.) / treal;
   printf(
@@ -389,3 +436,5 @@ inline void report(
   }
   report(tcpu, treal, entries, insize, outsize);
 }
+
+#endif

@@ -7,117 +7,65 @@
 #include <TROOT.h>
 #include <TStopwatch.h>
 #include <string>
-#include <getopt.h>
-
 #include "unpack.h"
 
 void usage() {
-  printf("Usage: unpack.exe [ options ] <layout> <type> infile.dump [infile2.dump ...] [ outfile.root ]\n");
+  printf("Usage: unpack.exe [-j N] <layout> <type> infile.dump [ outfile.root [ <compression> <level> ]\n");
   printf("  layout := separate | combined\n");
-  printf("  type   := float | float24 | int | raw64\n");
-  printf("Options: \n");
-  printf("  -j N            : multithread with N threads\n");
-  printf("  -z algo[,level] : enable compression\n");
-  printf("                    algorithms supported are none, lzma, zlib, lz4, zstd;\n");
-  printf("                    default level is 4\n");
+  printf("  type   := float | float24 | int\n");
+  printf("  compression := lzma | zlib | lz4 | zstd\n");
 }
 int main(int argc, char **argv) {
   if (argc < 3) {
     usage();
     return 1;
   }
-  int compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZLIB, compressionLevel = 0;
-  while (1) {
-    static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
-                                           {"threads", required_argument, nullptr, 'j'},
-                                           {"compression", required_argument, nullptr, 'z'},
-                                           {nullptr, 0, nullptr, 0}};
-    int option_index = 0;
-    int optc = getopt_long(argc, argv, "hj:z:", long_options, &option_index);
-    if (optc == -1)
-      break;
-
-    switch (optc) {
-      case 'h':
-        usage();
-        return 0;
-      case 'j': {
-        int threads = std::atoi(optarg);
-        if (threads != -1) {
-          ROOT::EnableImplicitMT(threads);
-          printf("Enabled Implicit MT with %d threads\n", threads);
-        }
-      } break;
-      case 'z': {
-        std::string compressionMethod = std::string(optarg);
-        auto pos = compressionMethod.find(",");
-        if (pos != std::string::npos) {
-          compressionLevel = std::atoi(compressionMethod.substr(pos + 1).c_str());
-          compressionMethod = compressionMethod.substr(0, pos);
-        } else {
-          compressionLevel = 4;
-        }
-        if (compressionMethod == "none") {
-          compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZLIB;
-          compressionLevel = 0;
-        } else if (compressionMethod == "lzma")
-          compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kLZMA;
-        else if (compressionMethod == "zlib")
-          compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZLIB;
-        else if (compressionMethod == "lz4")
-          compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kLZ4;
-        else if (compressionMethod == "zstd")
-          compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZSTD;
-        else {
-          printf("Unsupported compression algo %s\n", optarg);
-          return 1;
-        }
-      } break;
-      default:
-        usage();
-        return 1;
-    }
+  int iarg = 1, narg = argc - 1;
+  if (std::string(argv[iarg]) == "-j") {
+    ROOT::EnableImplicitMT(std::stoi(argv[iarg + 1]));
+    printf("Enabled Implicit MT with %d threads\n", std::stoi(argv[iarg + 1]));
+    iarg += 2;
+    narg -= 2;
+  }
+  std::string method = std::string(argv[iarg]);
+  std::string type = std::string(argv[iarg + 1]);
+  printf("Will run with method %s, type %s\n", argv[iarg], argv[iarg + 1]);
+  std::fstream fin(argv[iarg + 2], std::ios_base::in | std::ios_base::binary);
+  if (!fin.good()) {
+    printf("Error opening %s\n", argv[iarg + 2]);
+    return 2;
   }
 
-  int iarg = optind, narg = argc - optind;
-  std::string method = std::string(argv[iarg]), type = std::string(argv[iarg + 1]);
-  printf("Will run with method %s, type %s\n", argv[iarg], argv[iarg + 1]);
+  int compressionAlgo, compressionLevel = 0;
+  if (narg >= 6) {
+    std::string compressionName(argv[iarg + 4]);
+    if (compressionName == "lzma")
+      compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kLZMA;
+    else if (compressionName == "zlib")
+      compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZLIB;
+    else if (compressionName == "lz4")
+      compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kLZ4;
+    else if (compressionName == "zstd")
+      compressionAlgo = ROOT::RCompressionSetting::EAlgorithm::kZSTD;
+    else {
+      printf("Unsupported compression algo %s\n", argv[iarg + 2]);
+      return 1;
+    }
+    compressionLevel = std::stoi(argv[iarg + 5]);
+  }
 
-  std::vector<std::string> ins;
-  std::vector<std::fstream> fins;
   TFile *fout = nullptr;
   TTree *tree = nullptr;
-  std::string output;
-
-  TStopwatch timer;
-  timer.Start();
-
-  for (int i = iarg + 2; i < iarg + narg; ++i) {
-    std::string fname = argv[i];
-    if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".root") {
-      if (fout != nullptr) {
-        printf("Multiple output root files specified in the command line\n");
-        return 2;
-      }
-      output = fname;
-      fout = TFile::Open(argv[i], "RECREATE", "", compressionLevel);
-      if (fout == nullptr || !fout) {
-        printf("Error opening root file %s for output\n", argv[i]);
-        return 2;
-      }
-      if (compressionLevel)
-        fout->SetCompressionAlgorithm(compressionAlgo);
-      tree = new TTree("Events", "Events");
-    } else {  // assume it's an input file
-      ins.emplace_back(argv[i]);
-      fins.emplace_back(argv[i], std::ios_base::in | std::ios_base::binary);
-      if (!fins.back().good()) {
-        printf("Error opening %s\n", argv[iarg + 2]);
-        return 2;
-      }
-    }
+  if (narg > 3) {
+    fout = TFile::Open(argv[iarg + 3], "RECREATE", "", compressionLevel);
+    if (fout == nullptr || !fout)
+      return 2;
+    if (compressionLevel)
+      fout->SetCompressionAlgorithm(compressionAlgo);
+    tree = new TTree("Events", "Events");
   }
 
+  TStopwatch timer;
   unsigned long entries = 0;
   if (type == "int" && method == "combined") {
     uint64_t header, data[255];
@@ -154,11 +102,9 @@ int main(int argc, char **argv) {
       tree->Branch("Puppi_id", &id, "Puppi_id[nPuppi]/b");
     }
 
-    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
-      std::fstream &fin = fins[ifile];
-      do {
-        readevent(fin, header, run, bx, orbit, good, npuppi, data, pt, eta, phi, pdgid, z0, dxy, quality, wpuppi, id);
-      } while (header == 0 && fin.good());
+    timer.Start();
+    while (fin.good()) {
+      readevent(fin, header, run, bx, orbit, good, npuppi, data, pt, eta, phi, pdgid, z0, dxy, quality, wpuppi, id);
       if (tree)
         tree->Fill();
       entries++;
@@ -206,33 +152,31 @@ int main(int argc, char **argv) {
       tree->Branch("PuppiNeutral_id", &id, "PuppiNeutral_id[nPuppi]/b");
     }
 
-    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
-      std::fstream &fin = fins[ifile];
-      do {
-        readevent(fin,
-                  header,
-                  run,
-                  bx,
-                  orbit,
-                  good,
-                  npuppi,
-                  npuppi_c,
-                  npuppi_n,
-                  data,
-                  pt_c,
-                  pt_n,
-                  eta_c,
-                  eta_n,
-                  phi_c,
-                  phi_n,
-                  pdgid_c,
-                  pdgid_n,
-                  z0,
-                  dxy,
-                  quality,
-                  wpuppi,
-                  id);
-      } while (header == 0 && fin.good());
+    timer.Start();
+    while (fin.good()) {
+      readevent(fin,
+                header,
+                run,
+                bx,
+                orbit,
+                good,
+                npuppi,
+                npuppi_c,
+                npuppi_n,
+                data,
+                pt_c,
+                pt_n,
+                eta_c,
+                eta_n,
+                phi_c,
+                phi_n,
+                pdgid_c,
+                pdgid_n,
+                z0,
+                dxy,
+                quality,
+                wpuppi,
+                id);
       if (tree)
         tree->Fill();
       entries++;
@@ -267,24 +211,21 @@ int main(int argc, char **argv) {
       tree->Branch("Puppi_pt", &pt, ("Puppi_pt[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_eta", &eta, ("Puppi_eta[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_phi", &phi, ("Puppi_phi[nPuppi]/" + F).c_str());
-      tree->Branch("Puppi_pdgId", &pdgid, "Puppi_pdgId[nPuppi]/S");
+      tree->Branch("Puppi_pid", &pdgid, "Puppi_pid[nPuppi]/b");
       tree->Branch("Puppi_z0", &z0, ("Puppi_z0[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_dxy", &dxy, ("Puppi_dxy[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_wpuppi", &wpuppi, ("Puppi_wpuppi[nPuppi]/" + F).c_str());
       tree->Branch("Puppi_quality", &quality, "Puppi_quality[nPuppi]/b");
     }
 
-    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
-      std::fstream &fin = fins[ifile];
-      do {
-        readevent(fin, header, run, bx, orbit, good, npuppi8, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
-      } while (header == 0 && fin.good());
+    timer.Start();
+    while (fin.good()) {
+      readevent(fin, header, run, bx, orbit, good, npuppi8, data, pt, eta, phi, pdgid, z0, dxy, wpuppi, quality);
       npuppi16 = npuppi8;
       if (tree)
         tree->Fill();
       entries++;
     }
-
   } else if ((type == "float" || type == "float24") && method == "separate") {
     uint64_t header, data[255];
     uint16_t run, bx;
@@ -314,7 +255,7 @@ int main(int argc, char **argv) {
       tree->Branch("PuppiCharged_pt", &pt_c, ("PuppiCharged_pt[nPuppiCharged]/" + F).c_str());
       tree->Branch("PuppiCharged_eta", &eta_c, ("PuppiCharged_eta[nPuppiCharged]/" + F).c_str());
       tree->Branch("PuppiCharged_phi", &phi_c, ("PuppiCharged_phi[nPuppiCharged]/" + F).c_str());
-      tree->Branch("PuppiCharged_pdgId", &pdgid_c, "PuppiCharged_pdgId[nPuppiCharged]/S");
+      tree->Branch("PuppiCharged_pid", &pdgid_c, "PuppiCharged_pid[nPuppiCharged]/b");
       tree->Branch("PuppiCharged_quality", &quality, "PuppiCharged_quality[nPuppiCharged]/b");
       tree->Branch("PuppiCharged_z0", &z0, ("PuppiCharged_z0[nPuppiCharged]/" + F).c_str());
       tree->Branch("PuppiCharged_dxy", &dxy, ("PuppiCharged_dxy[nPuppiCharged]/" + F).c_str());
@@ -323,38 +264,36 @@ int main(int argc, char **argv) {
       tree->Branch("PuppiNeutral_pt", &pt_n, ("PuppiNeutral_pt[nPuppiNeutral]/" + F).c_str());
       tree->Branch("PuppiNeutral_eta", &eta_n, ("PuppiNeutral_eta[nPuppiNeutral]/" + F).c_str());
       tree->Branch("PuppiNeutral_phi", &phi_n, ("PuppiNeutral_phi[nPuppiNeutral]/" + F).c_str());
-      tree->Branch("PuppiNeutral_pdgId", &pdgid_n, "PuppiNeutral_pdgId[nPuppiNeutral]/S");
+      tree->Branch("PuppiNeutral_pid", &pdgid_n, "PuppiNeutral_pid[nPuppiNeutral]/b");
       tree->Branch("PuppiNeutral_wpuppi", &wpuppi, ("PuppiNeutral_wpuppi[nPuppiNeutral]/" + F).c_str());
       tree->Branch("PuppiNeutral_id", &id, "PuppiNeutral_id[nPuppiNeutral]/b");
     }
 
-    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
-      std::fstream &fin = fins[ifile];
-      do {
-        readevent(fin,
-                  header,
-                  run,
-                  bx,
-                  orbit,
-                  good,
-                  npuppi,
-                  npuppi_c,
-                  npuppi_n,
-                  data,
-                  pt_c,
-                  pt_n,
-                  eta_c,
-                  eta_n,
-                  phi_c,
-                  phi_n,
-                  pdgid_c,
-                  pdgid_n,
-                  z0,
-                  dxy,
-                  quality,
-                  wpuppi,
-                  id);
-      } while (header == 0 && fin.good());
+    timer.Start();
+    while (fin.good()) {
+      readevent(fin,
+                header,
+                run,
+                bx,
+                orbit,
+                good,
+                npuppi,
+                npuppi_c,
+                npuppi_n,
+                data,
+                pt_c,
+                pt_n,
+                eta_c,
+                eta_n,
+                phi_c,
+                phi_n,
+                pdgid_c,
+                pdgid_n,
+                z0,
+                dxy,
+                quality,
+                wpuppi,
+                id);
       if (tree)
         tree->Fill();
       entries++;
@@ -376,11 +315,9 @@ int main(int argc, char **argv) {
       tree->Branch("Puppi_packed", &data, "Puppi_packed[nPuppi]/l");
     }
 
-    for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
-      std::fstream &fin = fins[ifile];
-      do {
-        readheader(fin, header, run, bx, orbit, good, npuppi8);
-      } while (header == 0 && fin.good());
+    timer.Start();
+    while (fin.good()) {
+      readheader(fin, header, run, bx, orbit, good, npuppi8);
       if (npuppi8)
         fin.read(reinterpret_cast<char *>(data), npuppi8 * sizeof(uint64_t));
       npuppi16 = npuppi8;
@@ -388,7 +325,6 @@ int main(int argc, char **argv) {
         tree->Fill();
       entries++;
     }
-
   } else {
     usage();
     return 4;
@@ -399,6 +335,6 @@ int main(int argc, char **argv) {
   }
   timer.Stop();
   double tcpu = timer.CpuTime(), treal = timer.RealTime();
-  report(tcpu, treal, entries, ins, output);
+  report(tcpu, treal, argv[iarg + 2], narg > 3 ? argv[iarg + 3] : nullptr, entries);
   return 0;
 }
