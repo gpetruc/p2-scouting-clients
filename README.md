@@ -67,9 +67,9 @@ make && make run_tests
  * `DTHBasic256`, `DTHBasic256-NC`: read DTHBasic256 format. The `-NC` version only checks DTH headers and not the contents of the orbit payload itself.
 
 *Modes* that receive and store some data are:
- * `DTHReceiveOA`: when used as `data_checker.exe DTHReceiveOA source output [prescale]` it will receive in `DTHBasicOA` format and saves a prescaled amount of orbits out in `Native128` format. The default prescale is 100. It stops after collecting 4GB of data.
- * `DTHReceive256`: when used as `data_checker.exe DTHReceive256 source output [prescale]` it will receive in `DTHBasic256` format and saves a prescaled amount of orbits out in `Native64` format with up to 3 null 64-bit words at the end of each orbit (so, it can be read back with `Native64SZ`). The default prescale is 100. It stops after collecting 4GB of data.
- * `DTHRollingReceive256`: when used as `data_checker.exe DTHRollingReceive256 source outputBasePath orbitsPerFile` it will receive in `DTHBasic256` format and saves data out in `Native64` format with up to 3 null 64-bit words at the end of each orbit (so, it can be read back with `Native64SZ`), with a specified number of orbits per file. Outputs are saved as outputBasePath + `tsNN.orbNNNNNNNN.dump` where NN is the timeslice index (argument of option `-t`) and `NNNNNNNN` is the orbit number of the first orbit in the file.
+ * `DTHReceiveOA`: when used as `data_checker.exe DTHReceiveOA source output [--prescale N]` it will receive in `DTHBasicOA` format and saves a prescaled amount of orbits out in `Native128` format. It stops after collecting 4GB of data.
+ * `DTHReceive256`: when used as `data_checker.exe DTHReceive256 source output [--prescale N]` it will receive in `DTHBasic256` format and saves a prescaled amount of orbits out in `Native64` format with up to 3 null 64-bit words at the end of each orbit (so, it can be read back with `Native64SZ`). It stops after collecting 4GB of data.
+ * `DTHRollingReceive256`: when used as `data_checker.exe DTHRollingReceive256 source outputBasePath orbitsPerFile [--prescale N]` it will receive in `DTHBasic256` format and saves data out in `Native64` format with up to 3 null 64-bit words at the end of each orbit (so, it can be read back with `Native64SZ`), with a specified number of orbits per file. Outputs are saved as outputBasePath + `tsNN.orbNNNNNNNN.dump` where NN is the timeslice index (argument of option `-t`) and `NNNNNNNN` is the orbit number of the first orbit in the file. The file is first created with extension `.dump.tmp` and then renamed to `.dump` after it is closed.
 
 *Modes* for debugging are
  * `TrashData`: receive data via TCP/IP and discard it without any processing
@@ -95,7 +95,8 @@ Supported *modes* at the moment are just  `Native64` and `DTHBasic256`
 
 Useful *options* are:
  * `-n N`: generate N streams of data
- * `--orbits N` specifies how many orbits to generate
+ * `--orbits N`: specifies how many orbits to generate
+ * `--sync`: try to generate the orbits at the LHC rate (3564 / 40MHz); actual rate may be slower if the system is not fast enough to sustain the LHC rate
 
 #### Example of data generation and receiving with 2 streams, in DTH256 format
 
@@ -113,3 +114,6 @@ in a second shell do
 
 TCP/IP can also be used, but FIFOs are faster.
 
+### Utilities
+
+`utils/file_waiter.cc` is a simple demonstration program that shows how to monitor a directory for new files.

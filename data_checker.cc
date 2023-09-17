@@ -1006,16 +1006,20 @@ protected:
 
 class DTHRollingReceive256 : public DTHBasicChecker256 {
 public:
-  DTHRollingReceive256(unsigned int orbSize_kb, const char *basepath, unsigned int orbitsPerFile)
-      : DTHBasicChecker256(orbSize_kb), orbitsPerFile_(orbitsPerFile), basepath_(basepath), fname_(), fout_() {}
+  DTHRollingReceive256(unsigned int orbSize_kb, const char *basepath, unsigned int orbitsPerFile, unsigned int prescale = 1)
+      : DTHBasicChecker256(orbSize_kb), orbitsPerFile_(orbitsPerFile), prescale_(prescale), basepath_(basepath), fname_(), fout_() {}
 
   ~DTHRollingReceive256() override {}
 
   void newFile(uint32_t orbitNo) {
-    if (fout_.is_open())
-      fout_.close();
+    if (fout_.is_open()) {
+      assert(fname_.length() > 4);
+      rename(fname_.c_str(), fname_.substr(0,fname_.length()-4).c_str());
+    }
+    fout_.close();
     char buff[1024];
-    snprintf(buff, 1023, "%s.ts%02d.orb%08u.dump", basepath_.c_str(), firstbx_, orbitNo);
+    snprintf(buff, 1023, "%s.ts%02d.orb%08u.dump.tmp", basepath_.c_str(), firstbx_, orbitNo);
+    fname_ = buff;
     fout_.open(buff, std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
     printf("%02u: opening output file %s\n", id_, buff);
   }
@@ -1093,8 +1097,10 @@ public:
         readBytes += totlen256 << 5;
         if (!fout_.is_open() || oh.orbit % orbitsPerFile_ == orbitMux_)
           newFile(oh.orbit);
-        fout_.write(reinterpret_cast<char *>(orbit_buff), totlen256 << 5);
-        wroteBytes += totlen256 << 5;
+        if (prescale_ <= 1 || (oh.orbit % prescale_ == 1)) {
+          fout_.write(reinterpret_cast<char *>(orbit_buff), totlen256 << 5);
+          wroteBytes += totlen256 << 5;
+        }
         if (--toprint == 0) {
           printf("%02u: Read %7u orbits (%7u truncated, %.4f%%), %9.3f GB. Wrote %6.3f GB.\n",
                  id_,
@@ -1131,7 +1137,7 @@ public:
   }
 
 protected:
-  unsigned int orbitsPerFile_;
+  unsigned int orbitsPerFile_, prescale_;
   std::string basepath_, fname_;
   std::fstream fout_;
   bool checkData_;
@@ -1306,6 +1312,7 @@ int print_usage(const char *self, int retval) {
   printf("   -O  --orbsize  B : uses an orbit buffer size of B kB (default: 2048)\n");
   printf("   -k  --keep    : keep running \n");
   printf("   -n, --nclients N : runs N clients for timelices 0..N-1 with increasing port numbers\n");
+  printf("   -p, --prescale N : prescale output by a factor N (save orbit %% prescale == 1)\n");
   printf("\n");
   return retval;
 }
@@ -1331,7 +1338,7 @@ void start_and_run(std::unique_ptr<CheckerBase> &&checker,
 }
 
 int main(int argc, char **argv) {
-  int debug = 0, tmux = 6, tmux_slice = 0, orbitmux = 1, buffsize_kb = 4, orbsize_kb = 2048, nclients = 1;
+  int debug = 0, tmux = 6, tmux_slice = 0, orbitmux = 1, buffsize_kb = 4, orbsize_kb = 2048, nclients = 1, prescale = 1;
   unsigned int maxorbits = 10000000;
   bool keep_running = false, zeropad = false;
   while (1) {
@@ -1345,11 +1352,12 @@ int main(int argc, char **argv) {
                                            {"buffsize", required_argument, nullptr, 'B'},
                                            {"orbsize", required_argument, nullptr, 'O'},
                                            {"nclients", required_argument, nullptr, 'n'},
+                                           {"prescale", required_argument, nullptr, 'p'},
                                            {"zeropad", no_argument, nullptr, 'z'},
                                            {nullptr, 0, nullptr, 0}};
     /* getopt_long stores the option index here. */
     int option_index = 0;
-    int optc = getopt_long(argc, argv, "khd:T:t:b:O:n:z", long_options, &option_index);
+    int optc = getopt_long(argc, argv, "khd:T:t:b:O:n:p:z", long_options, &option_index);
 
     /* Detect the end of the options. */
     if (optc == -1)
@@ -1381,6 +1389,9 @@ int main(int argc, char **argv) {
         break;
       case 'O':
         orbsize_kb = std::atoi(optarg);
+        break;
+      case 'p':
+        prescale = std::atoi(optarg);
         break;
       case 'k':
         keep_running = true;
@@ -1415,27 +1426,25 @@ int main(int argc, char **argv) {
     } else if (kind == "DTHBasicOA" || kind == "DTHBasicOA-NC" || kind == "DTHBasicOA-NoSR") {
       checker.reset(new DTHBasicCheckerOA(orbsize_kb, kind != "DTHBasicOA-NC", kind != "DTHBasicOA-NoSR"));
     } else if (kind == "DTHReceiveOA") {
-      if (nargs != 3 && nargs != 4) {
-        printf("Usage: %s DTHReceiveOA ip:port outfile [prescale] \n", argv[0]);
+      if (nargs != 3) {
+        printf("Usage: %s DTHReceiveOA ip:port outfile\n", argv[0]);
         return 3;
       }
-      unsigned int prescale = (nargs == 3) ? 100 : std::atoi(argv[optind + 1]);
       checker.reset(new DTHReceiveOA(orbsize_kb, argv[optind], prescale));
     } else if (kind == "DTHBasic256" || kind == "DTHBasic256-NC") {
       checker.reset(new DTHBasicChecker256(orbsize_kb, kind != "DTHBasic256-NC", zeropad));
     } else if (kind == "DTHReceive256") {
-      if (nargs != 3 && nargs != 4) {
-        printf("Usage: %s DTHReceive256 ip:port outfile [prescale] \n", argv[0]);
+      if (nargs != 3) {
+        printf("Usage: %s DTHReceive256 ip:port outfile\n", argv[0]);
         return 3;
       }
-      unsigned int prescale = (nargs == 3) ? 100 : std::atoi(argv[optind + 1]);
       checker.reset(new DTHReceive256(orbsize_kb, argv[optind], prescale));
     } else if (kind == "DTHRollingReceive256") {
       if (nargs != 4) {
         printf("Usage: %s DTHRollingReceive256 ip:port outfile orbitsPerFile \n", argv[0]);
         return 3;
       }
-      checker.reset(new DTHRollingReceive256(orbsize_kb, argv[optind], std::atoi(argv[optind + 1])));
+      checker.reset(new DTHRollingReceive256(orbsize_kb, argv[optind], std::atoi(argv[optind + 1]), prescale));
     } else if (kind == "TrashData") {
       checker.reset(new TrashData(buffsize_kb));
     } else if (kind == "ReceiveAndStore") {
