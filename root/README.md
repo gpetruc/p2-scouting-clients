@@ -20,6 +20,15 @@ The unpacker have different layouts and formats:
  * `coll_float`: Puppi objects are saved as a RNTuple collection, with individual variables saved as floats.
  * `raw64`:  each puppi candidate is saved as a packed `uint64_t` word
 
+### Realtime unpacker (liveUnpacker.exe)
+When used as 
+```bash
+./liveUnpacker.exe <kind> <format> /path/to/input /path/to/outputs 
+```
+This tool monitors an input directory for new files, unpacks them to the output directory and deletes the input.
+ * `<kind>` can be `ttree` or `rntuple`, and `<format>` can be any of the formats supported by the TTree or RNTuple unpacker
+ * to avoid race conditions, the unpacker starts when a new file is either *moved to* the input directory, or *closed after being open for writing*, and will only process files that end with `.dump`.
+
 ### Old ROOT TTree unpacker (unpack.exe, deprecated):
 The old unpacker supports the same formats of then one but with one further configuration option: for everything other than raw64 the Puppi candidates can be written in `combined` format (neutrals and charged together) or `separate` (two separate `PuppiCharged` and `PuppiNeutral` sets of variables)
 

@@ -89,7 +89,7 @@ int main(int argc, char **argv) {
     } else if (format == "raw64") {
       unpacker = std::make_unique<RNTupleUnpackerRaw64>();
     } else {
-      printf("Unsupported outpt format %s\n", format.c_str());
+      printf("Unsupported output format %s\n", format.c_str());
       return 1;
     }
     unpacker->setCompression(compressionMethod, compressionLevel);

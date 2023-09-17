@@ -1006,15 +1006,24 @@ protected:
 
 class DTHRollingReceive256 : public DTHBasicChecker256 {
 public:
-  DTHRollingReceive256(unsigned int orbSize_kb, const char *basepath, unsigned int orbitsPerFile, unsigned int prescale = 1)
-      : DTHBasicChecker256(orbSize_kb), orbitsPerFile_(orbitsPerFile), prescale_(prescale), basepath_(basepath), fname_(), fout_() {}
+  DTHRollingReceive256(unsigned int orbSize_kb,
+                       const char *basepath,
+                       unsigned int orbitsPerFile,
+                       unsigned int prescale = 1)
+      : DTHBasicChecker256(orbSize_kb),
+        orbitsPerFile_(orbitsPerFile),
+        prescale_(prescale),
+        basepath_(basepath),
+        fname_(),
+        fout_() {}
 
   ~DTHRollingReceive256() override {}
 
   void newFile(uint32_t orbitNo) {
     if (fout_.is_open()) {
       assert(fname_.length() > 4);
-      rename(fname_.c_str(), fname_.substr(0,fname_.length()-4).c_str());
+      rename(fname_.c_str(), fname_.substr(0, fname_.length() - 4).c_str());
+      printf("Moved %s -> %s\n", fname_.c_str(), fname_.substr(0, fname_.length() - 4).c_str());
     }
     fout_.close();
     char buff[1024];
@@ -1117,6 +1126,12 @@ public:
       printf("%02u: Terminating an exception was raised:\n%s\n", id_, e.what());
       ret = 1;
     }
+    if (fout_.is_open()) {
+      assert(fname_.length() > 4);
+      rename(fname_.c_str(), fname_.substr(0, fname_.length() - 4).c_str());
+      printf("Moved %s -> %s\n", fname_.c_str(), fname_.substr(0, fname_.length() - 4).c_str());
+      fout_.close();
+    }
     auto tend = std::chrono::steady_clock::now();
     std::chrono::duration<double> dt = tend - tstart;
     double readRate = readBytes / 1024.0 / 1024.0 / 1024.0 / dt.count();
@@ -1131,8 +1146,6 @@ public:
     printf("%02u: Data rate in %.3f GB/s, out %.3f GB/s\n", id_, readRate, wroteRate);
     printf("\n");
     std::free(orbit_buff);
-    if (fout_.is_open())
-      fout_.close();
     return ret;
   }
 

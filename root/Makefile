@@ -29,6 +29,9 @@ $(RNTUPLE_UNPACKER_OBJ): %.o: %.cc %.h unpack.h RNTupleUnpackerBase.h ../Unpacke
 rntupleUnpacker.exe: RNTupleUnpackMain.cc $(RNTUPLE_UNPACKER_OBJ)
 	$(CC) $(CCFLAGS) $(LIBS) $^ -o $@
 
+liveUnpacker.exe: liveUnpacker.cc $(RNTUPLE_UNPACKER_OBJ) $(TREE_UNPACKER_OBJ)
+	$(CC) $(CCFLAGS) $(LIBS) $^ -o $@
+
 rntuple_unpack.exe: rntuple_unpack.cc unpack.h MyDict.cxx
 	$(CC) $(CCFLAGS) $(LIBS) $< MyDict.cxx -o $@
 

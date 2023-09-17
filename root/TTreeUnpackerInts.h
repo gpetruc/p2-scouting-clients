@@ -14,14 +14,13 @@ protected:
     //puppi candidate info:
     uint16_t pt[255];
     int16_t eta[255], phi[255];
-    uint16_t pid[255];
+    uint8_t pid[255];
+    uint8_t quality[255];
     //charged only:
     int16_t z0[255];
     int8_t dxy[255];
-    uint16_t quality[255];
     //neutral only:
     uint16_t wpuppi[255];
-    uint16_t id[255];
   };
 };
 

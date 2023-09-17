@@ -17,13 +17,12 @@ protected:
     float pt[255];
     float eta[255], phi[255];
     short int pdgid[255];
+    uint8_t quality[255];
     //charged only:
     float z0[255];
     float dxy[255];
     //neutral only:
     float wpuppi[255];
-    //common only:
-    uint8_t quality[255];
   };
 };
 

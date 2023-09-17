@@ -14,7 +14,6 @@ unsigned long int TTreeUnpackerInts::unpack(const std::vector<std::string> &ins,
     tree->Branch("Puppi_dxy", &d.dxy, "Puppi_dxy[nPuppi]/B");
     tree->Branch("Puppi_quality", &d.quality, "Puppi_quality[nPuppi]/b");
     tree->Branch("Puppi_wpuppi", &d.wpuppi, "Puppi_wpuppi[nPuppi]/s");
-    tree->Branch("Puppi_id", &d.id, "Puppi_id[nPuppi]/b");
   };
 
   auto decode = [](uint16_t &npuppi, uint64_t payload[255], Data &d) {
@@ -24,12 +23,10 @@ unsigned long int TTreeUnpackerInts::unpack(const std::vector<std::string> &ins,
       if (d.pid[i] > 1) {
         readcharged(payload[i], d.z0[i], d.dxy[i], d.quality[i]);
         d.wpuppi[i] = 0;
-        d.id[i] = 0;
       } else {
-        readneutral(payload[i], d.wpuppi[i], d.id[i]);
+        readneutral(payload[i], d.wpuppi[i], d.quality[i]);
         d.z0[i] = 0;
         d.dxy[i] = 0;
-        d.quality[i] = 0;
       }
     }
   };

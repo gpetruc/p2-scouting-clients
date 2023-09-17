@@ -25,7 +25,7 @@ protected:
     for (auto &in : ins) {
       fins.emplace_back(in, std::ios_base::in | std::ios_base::binary);
       if (!fins.back().good()) {
-        throw std::runtime_error("Error opening " + in + " for otput");
+        throw std::runtime_error("Error opening " + in + " for input");
       }
     }
     TFile *fout = nullptr;
