@@ -5,11 +5,13 @@ Here are some analysis programs that run using [ROOT RDataFrame](https://root.ce
 Recipe to compile and run them
 ```bash
 ## Get the environment from the latest LCG nightly build
-eval $(make env)
+eval $(make envdev)
 ## Compile the code
 make clean 
 make all
 ## Run basic tests to check that the analyzers can read the different input formats
+make run_tests
+## Run basic tests for different outputs (raw histograms, root histograms, snapshots)
 make run_tests
 ```
 
