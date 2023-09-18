@@ -1,6 +1,5 @@
 #include "analysis.h"
 #include "w3piExample2022.h"
-#include <TStopwatch.h>
 
 #include <getopt.h>
 

@@ -63,19 +63,19 @@ std::unique_ptr<UnpackerBase> makeUnpacker(const std::string &kind,
   return unpacker;
 }
 
-struct UnpackerToken {
-  UnpackerToken() : inputs(), output() {}
-  UnpackerToken(const std::string &inputName, const std::string &outputName)
+struct Token {
+  Token() : inputs(), output() {}
+  Token(const std::string &inputName, const std::string &outputName)
       : inputs(1, inputName), output(outputName) {}
-  UnpackerToken(const std::vector<std::string> &inputNames, const std::string &outputName)
+  Token(const std::vector<std::string> &inputNames, const std::string &outputName)
       : inputs(inputNames), output(outputName) {}
   std::vector<std::string> inputs;
   std::string output;
 };
 
-class UnpackerExecutor {
+class Executor {
 public:
-  UnpackerExecutor(const std::string &kind,
+  Executor(const std::string &kind,
                    const std::string &format,
                    const std::string &compressionMethod,
                    int compressionLevel,
@@ -85,13 +85,13 @@ public:
         compressionMethod_(compressionMethod),
         compressionLevel_(compressionLevel),
         deleteAfterwards_(deleteAfterwards) {}
-  UnpackerExecutor(const UnpackerExecutor &other)
+  Executor(const Executor &other)
       : kind_(other.kind_),
         format_(other.format_),
         compressionMethod_(other.compressionMethod_),
         compressionLevel_(other.compressionLevel_),
         deleteAfterwards_(other.deleteAfterwards_) {}
-  void operator()(UnpackerToken token) const {
+  void operator()(Token token) const {
     if (token.inputs.empty())
       return;
     if (!unpacker_)
@@ -116,13 +116,13 @@ private:
   mutable std::unique_ptr<UnpackerBase> unpacker_;
 };
 
-class UnpackerSourceExecutor {
+class Source {
 public:
-  UnpackerSourceExecutor(const std::string &from, const std::string &to, int inotify_fd)
+  Source(const std::string &from, const std::string &to, int inotify_fd)
       : from_(from), to_(to), inotify_fd_(inotify_fd) {}
 
-  UnpackerToken operator()(tbb::flow_control &fc) const {
-    UnpackerToken ret;
+  Token operator()(tbb::flow_control &fc) const {
+    Token ret;
     if (workQueue_.empty()) {
       if (!readMessages()) {
         fc.stop();
@@ -141,7 +141,7 @@ private:
   const std::string from_, to_;
   const int inotify_fd_;
 
-  mutable std::deque<UnpackerToken> workQueue_;
+  mutable std::deque<Token> workQueue_;
   bool readMessages() const {
     char buffer[BUF_LEN];
     for (;;) {
@@ -275,10 +275,10 @@ int tbbLiveUnpacker(unsigned int threads,
   //ROOT::EnableImplicitMT(1);
   ROOT::EnableThreadSafety();
 
-  auto head = tbb::make_filter<void, UnpackerToken>(tbb::filter::serial_in_order, UnpackerSourceExecutor(from, to, fd));
-  auto tail = tbb::make_filter<UnpackerToken, void>(
+  auto head = tbb::make_filter<void, Token>(tbb::filter::serial_in_order, Source(from, to, fd));
+  auto tail = tbb::make_filter<Token, void>(
       (threads == 0 ? tbb::filter::serial_in_order : tbb::filter::parallel),
-      UnpackerExecutor(kind, format, compressionMethod, compressionLevel, deleteAfterwards));
+      Executor(kind, format, compressionMethod, compressionLevel, deleteAfterwards));
   tbb::parallel_pipeline(std::max(1u, threads), head & tail);
 
   inotify_rm_watch(fd, wd);

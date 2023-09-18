@@ -1,6 +1,7 @@
 CC = c++
 CCFLAGS = -ggdb --std=c++17 -W -Wall -Wno-unused-variable -Ofast -march=native   $(shell root-config --cflags)
 LIBS = -lstdc++ $(shell root-config --ldflags --libs) -lROOTNTuple -L/cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/lib64 
+LCG ?= /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt
 
 .PHONY: clean env format 
 
@@ -15,6 +16,9 @@ $(ANALYSES_OBJ): %.o: %.cc %.h analysis.h
 
 run.exe: run.cc $(ANALYSES_OBJ)
 	$(CC) $(CCFLAGS) $(LIBS) $^ -o $@
+
+liveAnalysis.exe: liveAnalysis.cc $(ANALYSES_OBJ)
+	$(CC) $(CCFLAGS) $(LIBS) $^ -I$(LCG)/include -ltbb -o $@
 
 env:
 	@echo "source /cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/setup.sh"
