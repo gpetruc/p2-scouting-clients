@@ -102,7 +102,7 @@ inline void readneutral(const uint64_t data, uint16_t &wpuppi, uint16_t &id) {
 }
 inline void readneutral(const uint64_t data, float &wpuppi, uint16_t &id) {
   int wpuppiint = (data >> 23) & 0x3FF;
-  wpuppi = wpuppiint / 256;
+  wpuppi = wpuppiint * (1 / 256.f);
   id = (data >> 13) & 0x3F;
 }
 inline void readneutral(const uint64_t data, uint16_t &wpuppi, uint8_t &id) {
@@ -111,7 +111,7 @@ inline void readneutral(const uint64_t data, uint16_t &wpuppi, uint8_t &id) {
 }
 inline void readneutral(const uint64_t data, float &wpuppi, uint8_t &id) {
   int wpuppiint = (data >> 23) & 0x3FF;
-  wpuppi = wpuppiint / 256;
+  wpuppi = wpuppiint * (1 / 256.f);
   id = (data >> 13) & 0x3F;
 }
 inline void readevent(std::fstream &fin,
@@ -411,6 +411,32 @@ inline void report(double tcpu, double treal, int entries, float insize, float o
   }
 }
 
+inline void report(double treal, int entries, float insize, float outsize) {
+  float inrate = insize / (1024. * 1024.) / treal;
+  printf(
+      "Done in %.2fs. Event rate: %.1f kHz (40 MHz / %.1f), input data rate %.1f MB/s (%.1f "
+      "Gbps)\n",
+      treal,
+      entries / treal / 1000.,
+      (40e6 * treal / entries),
+      inrate,
+      inrate * 8 / 1024.);
+  if (outsize) {
+    float outrate = outsize / (1024. * 1024.) / treal;
+    float ratio = outsize / insize;
+    printf(
+        "Input file size: %.2f MB, Output file size: %.2f MB, File size ratio: %.3f, output data rate %.1f MB/s (%.1f "
+        "Gbps)\n\n",
+        insize / (1024. * 1024.),
+        outsize / (1024. * 1024.),
+        ratio,
+        outrate,
+        outrate * 8 / 1024);
+  } else {
+    printf("\n");
+  }
+}
+
 inline void report(double tcpu, double treal, int entries, const char *infile, const char *outfile) {
   struct stat stat_buf;
   int rc = stat(infile, &stat_buf);
@@ -437,4 +463,17 @@ inline void report(
   report(tcpu, treal, entries, insize, outsize);
 }
 
+inline void report(double treal, int entries, const std::vector<std::string> &infiles, const std::string &outfile) {
+  float insize = 0, outsize = 0;
+  struct stat stat_buf;
+  for (auto &infile : infiles) {
+    int rc = stat(infile.c_str(), &stat_buf);
+    insize += ((rc == 0) ? stat_buf.st_size : 0);
+  };
+  if (!outfile.empty()) {
+    int rc = stat(outfile.c_str(), &stat_buf);
+    outsize = ((rc == 0) ? stat_buf.st_size : 0);
+  }
+  report(treal, entries, insize, outsize);
+}
 #endif

@@ -21,13 +21,26 @@ The unpacker have different layouts and formats:
  * `raw64`:  each puppi candidate is saved as a packed `uint64_t` word
 
 ### Realtime unpacker (liveUnpacker.exe)
-When used as 
+
+In order to get the TBB library, this needs to be compiled passing the path to the LCG environment:
+```bash
+export LCG=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt
+make liveUnpacker.exe
+```
+it can then be run as 
 ```bash
 ./liveUnpacker.exe <kind> <format> /path/to/input /path/to/outputs 
 ```
 This tool monitors an input directory for new files, unpacks them to the output directory and deletes the input.
  * `<kind>` can be `ttree` or `rntuple`, and `<format>` can be any of the formats supported by the TTree or RNTuple unpacker
- * to avoid race conditions, the unpacker starts when a new file is either *moved to* the input directory, or *closed after being open for writing*, and will only process files that end with `.dump`.
+
+To avoid race conditions, the unpacker starts when a new file is either *moved to* the input directory, or *closed after being open for writing*, and will only process files that end with `.dump`.
+The file is immediately renamed to `.dump.taken`, and the output is called `.tmp.root` until it's complete.
+
+The code can be run multithread by specifying `-j N`, which will use up to N cpus to unpack files in parallel as they arrive.
+
+For benchmarking, an option `--delete` is provided that deletes also the _output_ files once the unpacking is completed, so that one doesn't fill up the ramdisk if there's no consumer process.
+
 
 ### Old ROOT TTree unpacker (unpack.exe, deprecated):
 The old unpacker supports the same formats of then one but with one further configuration option: for everything other than raw64 the Puppi candidates can be written in `combined` format (neutrals and charged together) or `separate` (two separate `PuppiCharged` and `PuppiNeutral` sets of variables)
@@ -54,8 +67,8 @@ For most tests, if you have a larger input data sample, you can point the code t
 All this has been tested with ROOT 6.28 from the [LCG_104 build](https://lcginfo.cern.ch/release/LCG_104/) or the master in [LCG dev3](https://lcginfo.cern.ch/release/dev3/) or [LCG dev3cuda](https://lcginfo.cern.ch/release/dev3cuda/), available on CERN CVMFS via
 
 ```
-source /cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/setup.sh           # 104 on EL8 
 source /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt/setup.sh   # master on EL8
+source /cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/setup.sh           # 104 on EL8 
 source /cvmfs/sft.cern.ch/lcg/views/dev3/latest/x86_64-el9-gcc13-opt/setup.sh           # master on EL9  
 ``` 
 

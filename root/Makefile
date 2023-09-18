@@ -2,6 +2,7 @@ CC = c++
 CCFLAGS = -W -Wall -Wno-unused-variable -Ofast -march=native   $(shell root-config --cflags)
 LIBS = -lstdc++ $(shell root-config --ldflags --libs) -lROOTNTuple
 DATAFILE ?= data/SingleNeutrino.dump
+LCG ?= /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt
 
 .PHONY: clean env format run_tests run_test_speed run_test_comp run_test_old
 
@@ -30,7 +31,7 @@ rntupleUnpacker.exe: RNTupleUnpackMain.cc $(RNTUPLE_UNPACKER_OBJ)
 	$(CC) $(CCFLAGS) $(LIBS) $^ -o $@
 
 liveUnpacker.exe: liveUnpacker.cc $(RNTUPLE_UNPACKER_OBJ) $(TREE_UNPACKER_OBJ)
-	$(CC) $(CCFLAGS) $(LIBS) $^ -o $@
+	$(CC) $(CCFLAGS) $(LIBS) $^ -I$(LCG)/include -ltbb  -o $@
 
 rntuple_unpack.exe: rntuple_unpack.cc unpack.h MyDict.cxx
 	$(CC) $(CCFLAGS) $(LIBS) $< MyDict.cxx -o $@
