@@ -232,7 +232,7 @@ void start_and_run(std::unique_ptr<GeneratorBase> &&generator,
   }
   if (fd < 0) {
     printf("Error in opening target %s for client %d.\n", target.c_str(), iclient);
-    client_errors++;
+    (*client_errors)++;
     return;
   }
   (*nclients)--;
@@ -363,7 +363,8 @@ int main(int argc, char **argv) {
   }
   for (auto &t : client_threads)
     t.join();
-  if (client_errors > 0)
+  if (client_errors.load() > 0) {
     ret = 1;
+  }
   return ret;
 }

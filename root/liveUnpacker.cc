@@ -23,6 +23,7 @@ void usage() {
   printf("  ttree  formats   := float | float24 | int | raw64\n");
   printf("  rntule formats   := floats | coll_float | raw64\n");
   printf("Options: \n");
+  printf("  --demux N       : demux N timeslices\n");
   printf("  -j N            : multithread with N threads\n");
   printf("  -z algo[,level] : enable compression\n");
   printf("                    algorithms supported are none, lzma, zlib, lz4, zstd;\n");
@@ -100,8 +101,8 @@ private:
 
 class Source {
 public:
-  Source(const std::string &from, const std::string &to, int inotify_fd)
-      : from_(from), to_(to), inotify_fd_(inotify_fd) {}
+  Source(const std::string &from, const std::string &to, unsigned int timeslices, int inotify_fd)
+      : from_(from), to_(to), inotify_fd_(inotify_fd), timeslices_(timeslices) {}
 
   Token operator()(bool &stop) const {
     Token ret;
@@ -129,8 +130,100 @@ private:
   static const unsigned int BUF_LEN = 1024 * (EVENT_SIZE + 16);
   const std::string from_, to_;
   const int inotify_fd_;
+  unsigned int timeslices_;
 
+  static bool parseUnpackedFilename(const std::string &fname, unsigned int &orbit, unsigned int &ts, std::string &fout) {
+    // in the form raw.ts00.orb00056001.dump  | tsXX.orbXXXXX.dump
+    if (fname.length() < 5)
+      return false;
+    std::string work = fname.substr(0, fname.length() - 5);  // remove the ".dump";
+    auto pos = work.rfind('.');
+    if (pos == std::string::npos || pos < 4 || work.substr(pos, 4) != ".orb") {
+      return false;
+    }
+    orbit = std::atol(work.substr(pos + 4).c_str());
+    auto pos2 = work.rfind('.', pos - 1);
+    if (work.substr(pos2 + 1, 2) != "ts") {
+      return false;
+    }
+    ts = std::atoi(work.substr(pos2 + 3, pos - pos2 - 3).c_str());
+    fout = work.substr(0, pos2) + work.substr(pos) + ".tmp.root";
+    //printf("parseUnpackedFilename('%s') --> orbit %u, ts %u, fout '%s'\n", work.c_str(), orbit, ts, fout.c_str());
+    return true;
+  }
+  struct DemuxQueueItem {
+    unsigned int orbit;
+    std::vector<std::string> timeslices;
+    std::string fout;
+    DemuxQueueItem(unsigned int orbit_, unsigned int ntimeslices, const std::string &fout_)
+        : orbit(orbit_), timeslices(ntimeslices), fout(fout_) {}
+  };
+  mutable std::list<DemuxQueueItem> demuxQueue_;
   mutable std::deque<Token> workQueue_;
+  void maybeAddSingle(const std::string &fname, std::string &in) const {
+    std::filesystem::rename(in, in + ".taken");
+    in += ".taken";
+    std::string out = to_ + "/" + fname.substr(0, fname.length() - 5) + ".tmp.root";
+    bool found = false;
+    for (const auto &el : workQueue_) {
+      if (el.output == out) {
+        found = true;
+        break;
+      }
+    }
+    if (!found)
+      workQueue_.emplace_back(in, out);
+  }
+  void maybeAddTMux(const std::string &fname, std::string &in) const {
+    unsigned int orbit;
+    unsigned int ts;
+    std::string fout;
+    if (!parseUnpackedFilename(fname, orbit, ts, fout))
+      return;
+    bool found = false;
+    for (auto it = demuxQueue_.begin(), ed = demuxQueue_.end(); it != ed; ++it) {
+      if (it->orbit != orbit)
+        continue;
+      assert(ts < timeslices_ && it->timeslices.size() == timeslices_);
+      //printf("Found demuxQueue record for orbit %u\n", orbit);
+      //or (unsigned int i = 0; i < timeslices_; ++i) {
+      //  printf("  ts[%u] = '%s'\n", i, it->timeslices[i].c_str());
+      //}
+      if (it->timeslices[ts].empty()) {
+        it->timeslices[ts] = in;
+        bool complete = true;
+        for (const auto &t : it->timeslices) {
+          if (t.empty())
+            complete = false;
+        }
+        if (complete) {
+          //printf("demuxQueue record for orbit %u has all %u timeslices available.\n", orbit, timeslices_);
+          for (auto &i : it->timeslices) {
+            std::filesystem::rename(i, i + ".taken");
+            i += ".taken";
+          }
+          workQueue_.emplace_back(it->timeslices, to_ + "/" + it->fout);
+          demuxQueue_.erase(it);
+        }
+      } else {
+        if (it->timeslices[ts] != in) {
+          printf("ERROR, mismatch files for orbit %d, ts %d: %s vs %s\n",
+                 orbit,
+                 ts,
+                 it->timeslices[ts].c_str(),
+                 in.c_str());
+          abort();
+        }
+      }
+      found = true;
+      break;
+    }
+    if (!found) {
+      //printf("Creating new demuxQueue record for orbit %u, with ts %u\n", orbit, ts);
+      auto &el = demuxQueue_.emplace_back(orbit, timeslices_, fout);
+      el.timeslices[ts] = in;
+    }
+  }
   bool readMessages() const {
     char buffer[BUF_LEN];
     for (;;) {
@@ -150,18 +243,11 @@ private:
               if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".dump") {
                 std::string in(from_ + "/" + fname);
                 if (std::filesystem::exists(in)) {
-                  rename(in.c_str(), (in + ".taken").c_str());
-                  in += ".taken";
-                  std::string out = to_ + "/" + fname.substr(0, fname.length() - 5) + ".tmp.root";
-                  bool found = false;
-                  for (const auto &el : workQueue_) {
-                    if (el.output == out) {
-                      found = true;
-                      break;
-                    }
+                  if (timeslices_ == 0) {
+                    maybeAddSingle(fname, in);
+                  } else {
+                    maybeAddTMux(fname, in);
                   }
-                  if (!found)
-                    workQueue_.emplace_back(in, out);
                 }
               }
             }
@@ -182,7 +268,7 @@ std::pair<int, int> initInotify(const std::string &from) {
   int fd = inotify_init();
   if (fd < 0) {
     perror("inotify_init");
-    return std::make_pair(fd,0);
+    return std::make_pair(fd, 0);
   }
 
   int wd = inotify_add_watch(fd, from.c_str(), IN_CLOSE_WRITE | IN_MOVED_TO);
@@ -193,13 +279,14 @@ std::pair<int, int> initInotify(const std::string &from) {
 int singleCoreLiveUnpacker(const UnpackerBase &unpacker,
                            const std::string &from,
                            const std::string &to,
+                           unsigned int timeslices,
                            bool deleteAfterwards) {
   auto fdwd = initInotify(from);
   if (fdwd.first < 0) {
     return -1;
   }
 
-  auto src = Source(from, to, fdwd.first);
+  auto src = Source(from, to, timeslices, fdwd.first);
   auto dest = Executor(unpacker, deleteAfterwards);
   bool stop = false;
   while (!stop) {
@@ -214,8 +301,9 @@ int singleCoreLiveUnpacker(const UnpackerBase &unpacker,
 
 int tbbLiveUnpacker(unsigned int threads,
                     const UnpackerBase &unpacker,
-                           const std::string &from,
+                    const std::string &from,
                     const std::string &to,
+                    unsigned int timeslices,
                     bool deleteAfterwards) {
   auto fdwd = initInotify(from);
   if (fdwd.first < 0) {
@@ -224,10 +312,9 @@ int tbbLiveUnpacker(unsigned int threads,
 
   ROOT::EnableThreadSafety();
 
-  auto head = tbb::make_filter<void, Token>(tbb::filter::serial_in_order, Source(from, to, fdwd.first));
-  auto tail =
-      tbb::make_filter<Token, void>((threads == 0 ? tbb::filter::serial_in_order : tbb::filter::parallel),
-                              Executor(unpacker, deleteAfterwards));
+  auto head = tbb::make_filter<void, Token>(tbb::filter::serial_in_order, Source(from, to, timeslices, fdwd.first));
+  auto tail = tbb::make_filter<Token, void>((threads == 0 ? tbb::filter::serial_in_order : tbb::filter::parallel),
+                                            Executor(unpacker, deleteAfterwards));
   tbb::parallel_pipeline(std::max(1u, threads), head & tail);
 
   inotify_rm_watch(fdwd.first, fdwd.second);
@@ -247,15 +334,17 @@ int main(int argc, char **argv) {
 
   std::string compressionMethod = "none";
   int compressionLevel = 0, threads = -1;
+  unsigned int timeslices = 0;
   bool deleteAfterwards = false;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
                                            {"threads", required_argument, nullptr, 'j'},
+                                           {"demux", required_argument, nullptr, 'd'},
                                            {"compression", required_argument, nullptr, 'z'},
                                            {"delete", no_argument, nullptr, 'D'},
                                            {nullptr, 0, nullptr, 0}};
     int option_index = 0;
-    int optc = getopt_long(argc, argv, "hz:j:D", long_options, &option_index);
+    int optc = getopt_long(argc, argv, "hz:j:d:D", long_options, &option_index);
     if (optc == -1)
       break;
 
@@ -276,9 +365,11 @@ int main(int argc, char **argv) {
       case 'j':
         threads = std::atoi(optarg);
         break;
+      case 'd':
+        timeslices = std::atoi(optarg);
+        break;
       case 'D':
         deleteAfterwards = true;
-        ;
         break;
       default:
         usage();
@@ -294,10 +385,11 @@ int main(int argc, char **argv) {
   printf("Will run %s format %s from %s to %s\n", argv[iarg], argv[iarg + 1], argv[iarg + 2], argv[iarg + 3]);
 
   std::unique_ptr<UnpackerBase> unpacker = makeUnpacker(kind, format, compressionMethod, compressionLevel);
-  if (!unpacker) return 2;
+  if (!unpacker)
+    return 2;
   if (threads == -1) {
-    return singleCoreLiveUnpacker(*unpacker, from, to, deleteAfterwards);
+    return singleCoreLiveUnpacker(*unpacker, from, to, timeslices, deleteAfterwards);
   } else if (threads >= 0) {
-    return tbbLiveUnpacker(threads, *unpacker, from, to, deleteAfterwards);
+    return tbbLiveUnpacker(threads, *unpacker, from, to, timeslices, deleteAfterwards);
   }
 }

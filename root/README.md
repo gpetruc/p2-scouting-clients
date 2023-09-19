@@ -34,13 +34,14 @@ it can then be run as
 This tool monitors an input directory for new files, unpacks them to the output directory and deletes the input.
  * `<kind>` can be `ttree` or `rntuple`, and `<format>` can be any of the formats supported by the TTree or RNTuple unpacker
 
-To avoid race conditions, the unpacker starts when a new file is either *moved to* the input directory, or *closed after being open for writing*, and will only process files that end with `.dump`.
-The file is immediately renamed to `.dump.taken`, and the output is called `.tmp.root` until it's complete.
-
-The code can be run multithread by specifying `-j N`, which will use up to N cpus to unpack files in parallel as they arrive.
+The main options are:
+ * `-j N`: run multithread using up to N cpus to unpack files in parallel as they arrive.
    * FIXME: that the multithreaded live unpacker doesn't seem to respond to _ctrl+C_, so the way to stop it is to send it to background with _ctrl+Z_ and then `kill -9 %`. 
+ * `--delete`: delete also the _output_ files once the unpacking is completed (for benchmarking, so that one doesn't fill up the ramdisk if there's no consumer process)
+ * `--demux T`: time-demultiplex inputs that arrive from T timeslices. Input filenames must conform to what DTHRollingReceive256 produces.
 
-For benchmarking, an option `--delete` is provided that deletes also the _output_ files once the unpacking is completed, so that one doesn't fill up the ramdisk if there's no consumer process.
+To avoid race conditions, the unpacker starts when a new file is either *moved to* the input directory, or *closed after being open for writing*, and will only process files that end with `.dump`.
+The file is renamed to `.dump.taken` before starting the processing, and the output is called `.tmp.root` until it's complete.
 
 
 ### Old ROOT TTree unpacker (unpack.exe, deprecated):
