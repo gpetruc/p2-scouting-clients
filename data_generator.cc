@@ -156,6 +156,14 @@ public:
         if (dt < orbitTime * i) {
           std::this_thread::sleep_for(std::chrono::duration<double>(orbitTime * i - dt));
         }
+        if (i % 5000 == 0) {
+          double orbrate = i / orbitmux / dt, orbrate_lhc = 40e6 / 3564;
+          printf("Generator running, wrote %u orbits in %.2f ms (%.3f kHz, x %.3f)\n",
+                 i / orbitmux,
+                 dt * 1000,
+                 orbrate / 1000,
+                 orbrate / orbrate_lhc);
+        }
       }
     }
     std::free(orbit_buff);
@@ -187,9 +195,10 @@ int connect_tcp(const char *addr, const char *port, unsigned int port_offs = 0) 
 
 int print_usage(const char *self, int retval) {
   printf("Usage: %s  [options] Algo srcFile ( file | ip:port )\n", self);
+  printf("    --orbits N  : generate N orbits (default: 10)\n");
+  printf("    --time   [ <N>s | <N>m | N<h> ]  : run for the specified amount of time in seconds, minutes, hours\n");
   printf("   -T, --tmux  T  : runs at TMUX T (default: 6)\n");
   printf("    --orbitmux N  : mux orbits by factor N (default: 1)\n");
-  printf("    --maxorbits N : stop after this number of orbits (default: 10000000)\n");
   printf("   -t, --tslice T : runs tslice t  (default: 0)\n");
   printf("   -s, --seed   N : sets seed of RNG\n");
   printf("   -O  --orbsize  B : uses an orbit buffer size of B kB (default: 2048)\n");
@@ -248,13 +257,14 @@ void start_and_run(std::unique_ptr<GeneratorBase> &&generator,
 
 int main(int argc, char **argv) {
   int tmux = 6, tmux_slice = 0, orbsize_kb = 2048, nclients = 1, seed = 37;
-  unsigned int maxorbits = 10, orbitmux = 1;
+  unsigned int orbits = 0, orbitmux = 1, seconds = 0;
   bool sync = false;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
                                            {"tmux", required_argument, nullptr, 'T'},
                                            {"orbitmux", required_argument, nullptr, 1},
                                            {"orbits", required_argument, nullptr, 2},
+                                           {"time", required_argument, nullptr, 3},
                                            {"tslice", required_argument, nullptr, 't'},
                                            {"seed", required_argument, nullptr, 's'},
                                            {"orbsize", required_argument, nullptr, 'O'},
@@ -285,8 +295,22 @@ int main(int argc, char **argv) {
         orbitmux = std::atoi(optarg);
         break;
       case 2:
-        maxorbits = std::atol(optarg);
+        orbits = std::atol(optarg);
         break;
+      case 3: {
+        std::string optval(optarg);
+        char unit = optval[optval.length() - 1];
+        if (unit == 's')
+          seconds = std::atol(optval.substr(0, optval.length() - 1).c_str());
+        else if (unit == 'm')
+          seconds = std::atol(optval.substr(0, optval.length() - 1).c_str()) * 60;
+        else if (unit == 'h')
+          seconds = std::atol(optval.substr(0, optval.length() - 1).c_str()) * 3600;
+        else {
+          printf("Unsupported argument for --time: %s\n", optarg);
+          return 1;
+        }
+      } break;
       case 'O':
         orbsize_kb = std::atoi(optarg);
         break;
@@ -311,6 +335,15 @@ int main(int argc, char **argv) {
 
   std::string target = argv[optind++];
 
+  if (seconds != 0) {
+    if (orbits != 0) {
+      printf("Can't specify both --orbits and --time\n");
+      return 1;
+    }
+    orbits = (40e6 / 3564) * seconds;
+  } else if (orbits == 0) {
+    orbits = 10;
+  }
   int ret = 0;
   std::atomic<unsigned int> clients = nclients, client_errors = 0;
   std::vector<std::thread> client_threads;
@@ -326,7 +359,7 @@ int main(int argc, char **argv) {
       return 3;
     }
     client_threads.emplace_back(
-        start_and_run, std::move(checker), target, maxorbits, orbitmux, client, &clients, &client_errors);
+        start_and_run, std::move(checker), target, orbits, orbitmux, client, &clients, &client_errors);
   }
   for (auto &t : client_threads)
     t.join();

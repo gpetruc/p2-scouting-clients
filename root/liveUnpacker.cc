@@ -65,8 +65,7 @@ std::unique_ptr<UnpackerBase> makeUnpacker(const std::string &kind,
 
 struct Token {
   Token() : inputs(), output() {}
-  Token(const std::string &inputName, const std::string &outputName)
-      : inputs(1, inputName), output(outputName) {}
+  Token(const std::string &inputName, const std::string &outputName) : inputs(1, inputName), output(outputName) {}
   Token(const std::vector<std::string> &inputNames, const std::string &outputName)
       : inputs(inputNames), output(outputName) {}
   std::vector<std::string> inputs;
@@ -75,27 +74,12 @@ struct Token {
 
 class Executor {
 public:
-  Executor(const std::string &kind,
-                   const std::string &format,
-                   const std::string &compressionMethod,
-                   int compressionLevel,
-                   bool deleteAfterwards)
-      : kind_(kind),
-        format_(format),
-        compressionMethod_(compressionMethod),
-        compressionLevel_(compressionLevel),
-        deleteAfterwards_(deleteAfterwards) {}
-  Executor(const Executor &other)
-      : kind_(other.kind_),
-        format_(other.format_),
-        compressionMethod_(other.compressionMethod_),
-        compressionLevel_(other.compressionLevel_),
-        deleteAfterwards_(other.deleteAfterwards_) {}
+  Executor(const UnpackerBase &unpacker, bool deleteAfterwards)
+      : unpacker_(&unpacker), deleteAfterwards_(deleteAfterwards) {}
+  Executor(const Executor &other) : unpacker_(other.unpacker_), deleteAfterwards_(other.deleteAfterwards_) {}
   void operator()(Token token) const {
     if (token.inputs.empty())
       return;
-    if (!unpacker_)
-      unpacker_ = makeUnpacker(kind_, format_, compressionMethod_, compressionLevel_);
     printf("Unpack %s[#%d] -> %s\n", token.inputs.front().c_str(), int(token.inputs.size()), token.output.c_str());
     auto tstart = std::chrono::steady_clock::now();
     unsigned long entries = unpacker_->unpack(token.inputs, token.output);
@@ -110,10 +94,8 @@ public:
   }
 
 private:
-  const std::string kind_, format_, compressionMethod_;
-  const int compressionLevel_;
+  const UnpackerBase *unpacker_;
   const bool deleteAfterwards_;
-  mutable std::unique_ptr<UnpackerBase> unpacker_;
 };
 
 class Source {
@@ -121,17 +103,24 @@ public:
   Source(const std::string &from, const std::string &to, int inotify_fd)
       : from_(from), to_(to), inotify_fd_(inotify_fd) {}
 
-  Token operator()(tbb::flow_control &fc) const {
+  Token operator()(bool &stop) const {
     Token ret;
     if (workQueue_.empty()) {
       if (!readMessages()) {
-        fc.stop();
+        stop = true;
       }
     }
     if (!workQueue_.empty()) {
       ret = workQueue_.front();
       workQueue_.pop_front();
     }
+    return ret;
+  }
+  Token operator()(tbb::flow_control &fc) const {
+    bool stop = false;
+    Token ret = operator()(stop);
+    if (stop)
+      fc.stop();
     return ret;
   }
 
@@ -189,100 +178,60 @@ private:
   }
 };
 
-int singleCoreLiveUnpacker(const std::string &from,
-                           const std::string &to,
-                           const std::string &kind,
-                           const std::string &format,
-                           const std::string &compressionMethod,
-                           int compressionLevel,
-                           bool deleteAfterwards) {
-  std::unique_ptr<UnpackerBase> unpacker = makeUnpacker(kind, format, compressionMethod, compressionLevel);
-  if (!unpacker)
-    return 1;
-
-  const unsigned int EVENT_SIZE = sizeof(struct inotify_event);
-  const unsigned int BUF_LEN = 1024 * (EVENT_SIZE + 16);
-  char buffer[BUF_LEN];
-
+std::pair<int, int> initInotify(const std::string &from) {
   int fd = inotify_init();
-
   if (fd < 0) {
     perror("inotify_init");
-    return 1;
+    return std::make_pair(fd,0);
   }
 
   int wd = inotify_add_watch(fd, from.c_str(), IN_CLOSE_WRITE | IN_MOVED_TO);
   printf("Watching %s for new files\n", from.c_str());
-  for (;;) {
-    int length = read(fd, buffer, BUF_LEN);
+  return std::make_pair(fd, wd);
+}
 
-    if (length < 0) {
-      perror("read");
-      return 2;
-    }
-
-    for (int i = 0; i < length;) {
-      struct inotify_event *event = reinterpret_cast<inotify_event *>(&buffer[i]);
-      if (event->len) {
-        if (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO)) {
-          if (!(event->mask & IN_ISDIR)) {
-            std::string fname = event->name;
-            if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".dump") {
-              std::vector<std::string> in(1, from + "/" + fname);
-              if (std::filesystem::exists(in.front())) {
-                std::string out = to + "/" + fname.substr(0, fname.length() - 5) + ".root";
-                printf("Unpack %s -> %s\n", in.front().c_str(), out.c_str());
-                auto tstart = std::chrono::steady_clock::now();
-                unsigned long entries = unpacker->unpack(in, out);
-                double dt = (std::chrono::duration<double>(std::chrono::steady_clock::now() - tstart)).count();
-                report(dt, entries, in, out);
-                unlink(in.front().c_str());
-                if (deleteAfterwards)
-                  unlink(out.c_str());
-              }
-            }
-          }
-        }
-        i += EVENT_SIZE + event->len;
-      }
-    }
+int singleCoreLiveUnpacker(const UnpackerBase &unpacker,
+                           const std::string &from,
+                           const std::string &to,
+                           bool deleteAfterwards) {
+  auto fdwd = initInotify(from);
+  if (fdwd.first < 0) {
+    return -1;
   }
 
-  inotify_rm_watch(fd, wd);
-  close(fd);
+  auto src = Source(from, to, fdwd.first);
+  auto dest = Executor(unpacker, deleteAfterwards);
+  bool stop = false;
+  while (!stop) {
+    dest(src(stop));
+  }
+
+  inotify_rm_watch(fdwd.first, fdwd.second);
+  close(fdwd.first);
 
   return 0;
 }
 
 int tbbLiveUnpacker(unsigned int threads,
-                    const std::string &from,
+                    const UnpackerBase &unpacker,
+                           const std::string &from,
                     const std::string &to,
-                    const std::string &kind,
-                    const std::string &format,
-                    const std::string &compressionMethod,
-                    int compressionLevel,
                     bool deleteAfterwards) {
-  int fd = inotify_init();
-
-  if (fd < 0) {
-    perror("inotify_init");
-    return 1;
+  auto fdwd = initInotify(from);
+  if (fdwd.first < 0) {
+    return -1;
   }
 
-  int wd = inotify_add_watch(fd, from.c_str(), IN_CLOSE_WRITE | IN_MOVED_TO);
-  printf("Watching %s for new files\n", from.c_str());
-
-  //ROOT::EnableImplicitMT(1);
   ROOT::EnableThreadSafety();
 
-  auto head = tbb::make_filter<void, Token>(tbb::filter::serial_in_order, Source(from, to, fd));
-  auto tail = tbb::make_filter<Token, void>(
-      (threads == 0 ? tbb::filter::serial_in_order : tbb::filter::parallel),
-      Executor(kind, format, compressionMethod, compressionLevel, deleteAfterwards));
+  auto head = tbb::make_filter<void, Token>(tbb::filter::serial_in_order, Source(from, to, fdwd.first));
+  auto tail =
+      tbb::make_filter<Token, void>((threads == 0 ? tbb::filter::serial_in_order : tbb::filter::parallel),
+                              Executor(unpacker, deleteAfterwards));
   tbb::parallel_pipeline(std::max(1u, threads), head & tail);
 
-  inotify_rm_watch(fd, wd);
-  close(fd);
+  inotify_rm_watch(fdwd.first, fdwd.second);
+  close(fdwd.first);
 
   return 0;
 }
@@ -344,9 +293,11 @@ int main(int argc, char **argv) {
   std::string to = std::string(argv[iarg + 3]);
   printf("Will run %s format %s from %s to %s\n", argv[iarg], argv[iarg + 1], argv[iarg + 2], argv[iarg + 3]);
 
+  std::unique_ptr<UnpackerBase> unpacker = makeUnpacker(kind, format, compressionMethod, compressionLevel);
+  if (!unpacker) return 2;
   if (threads == -1) {
-    return singleCoreLiveUnpacker(from, to, kind, format, compressionMethod, compressionLevel, deleteAfterwards);
+    return singleCoreLiveUnpacker(*unpacker, from, to, deleteAfterwards);
   } else if (threads >= 0) {
-    return tbbLiveUnpacker(threads, from, to, kind, format, compressionMethod, compressionLevel, deleteAfterwards);
+    return tbbLiveUnpacker(threads, *unpacker, from, to, deleteAfterwards);
   }
 }

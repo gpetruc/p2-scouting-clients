@@ -96,6 +96,7 @@ Supported *modes* at the moment are just  `Native64` and `DTHBasic256`
 Useful *options* are:
  * `-n N`: generate N streams of data
  * `--orbits N`: specifies how many orbits to generate
+ * `--time T[s|m|h]`: generates orbits corresponding to T seconds, minutes or hours (can be used instead of --orbits)
  * `--sync`: try to generate the orbits at the LHC rate (3564 / 40MHz); actual rate may be slower if the system is not fast enough to sustain the LHC rate
 
 #### Example of data generation and receiving with 2 streams, in DTH256 format

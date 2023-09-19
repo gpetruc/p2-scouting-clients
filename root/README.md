@@ -38,6 +38,7 @@ To avoid race conditions, the unpacker starts when a new file is either *moved t
 The file is immediately renamed to `.dump.taken`, and the output is called `.tmp.root` until it's complete.
 
 The code can be run multithread by specifying `-j N`, which will use up to N cpus to unpack files in parallel as they arrive.
+   * FIXME: that the multithreaded live unpacker doesn't seem to respond to _ctrl+C_, so the way to stop it is to send it to background with _ctrl+Z_ and then `kill -9 %`. 
 
 For benchmarking, an option `--delete` is provided that deletes also the _output_ files once the unpacking is completed, so that one doesn't fill up the ramdisk if there's no consumer process.
 
