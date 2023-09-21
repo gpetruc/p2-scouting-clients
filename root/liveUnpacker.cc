@@ -11,6 +11,8 @@
 #include "TTreeUnpackerRaw64.h"
 #include "RNTupleUnpackerFloats.h"
 #include "RNTupleUnpackerCollFloat.h"
+#include "RNTupleUnpackerInts.h"
+#include "RNTupleUnpackerCollInt.h"
 #include "RNTupleUnpackerRaw64.h"
 #include <getopt.h>
 #include <libgen.h>
@@ -51,6 +53,10 @@ std::unique_ptr<UnpackerBase> makeUnpacker(const std::string &kind,
       unpacker = std::make_unique<RNTupleUnpackerFloats>();
     } else if (format == "coll_float") {
       unpacker = std::make_unique<RNTupleUnpackerCollFloat>();
+    } else if (format == "ints") {
+      unpacker = std::make_unique<RNTupleUnpackerInts>();
+    } else if (format == "coll_int") {
+      unpacker = std::make_unique<RNTupleUnpackerCollInt>();
     } else if (format == "raw64") {
       unpacker = std::make_unique<RNTupleUnpackerRaw64>();
     } else {

@@ -27,14 +27,6 @@ inline void readheader(
 inline void assignpdgid(uint8_t pid, short int &pdgid) {
   static constexpr int16_t PDGIDS[8] = {130, 22, -211, 211, 11, -11, 13, -13};
   pdgid = PDGIDS[pid];
-  //if (pid == 0) pdgid = 130;
-  //else if (pid == 1) pdgid = 22;
-  //else if (pid == 2) pdgid = -211;
-  //else if (pid == 3) pdgid = 211;
-  //else if (pid == 4) pdgid = 11;
-  //else if (pid == 5) pdgid = -11;
-  //else if (pid == 6) pdgid = 13;
-  //else if (pid == 7) pdgid = -13;
 }
 inline bool readpid(const uint64_t data, short int &pdgid) {
   uint8_t pid = (data >> 37) & 0x7;

@@ -51,7 +51,7 @@ run_tests: treeUnpacker.exe rntupleUnpacker.exe
 	@for T in float float24 int raw64; do  \
 		./treeUnpacker.exe $$T data/SingleNeutrino.dump out.root; \
 	done
-	@for T in floats coll_float raw64; do  \
+	@for T in floats coll_float ints coll_int raw64; do  \
 		./rntupleUnpacker.exe $$T data/SingleNeutrino.dump out.root; \
 	done
 
@@ -67,6 +67,8 @@ run_test_speed: treeUnpacker.exe rntupleUnpacker.exe
 	@./treeUnpacker.exe float $(DATAFILE) /run/user/$$UID/out.root
 	@./treeUnpacker.exe float24 $(DATAFILE) /run/user/$$UID/out.root
 	@./rntupleUnpacker.exe raw64 $(DATAFILE)  /run/user/$$UID/out.root
+	@./rntupleUnpacker.exe ints $(DATAFILE)  /run/user/$$UID/out.root
+	@./rntupleUnpacker.exe coll_int $(DATAFILE)  /run/user/$$UID/out.root
 	@./rntupleUnpacker.exe floats $(DATAFILE)  /run/user/$$UID/out.root
 	@./rntupleUnpacker.exe coll_float $(DATAFILE)  /run/user/$$UID/out.root
 
@@ -83,6 +85,8 @@ run_test_multi: treeUnpacker.exe rntupleUnpacker.exe
 run_test_comp: treeUnpacker.exe rntupleUnpacker.exe
 	@echo "==== With LZ4 output ===="
 	@./treeUnpacker.exe -j 6 int $(DATAFILE) /run/user/$$UID/out.root -z lz4,4
+	@./rntupleUnpacker.exe -j 6 ints $(DATAFILE)  /run/user/$$UID/out.root -z lz4,4
+	@./rntupleUnpacker.exe -j 6 coll_int $(DATAFILE)  /run/user/$$UID/out.root -z lz4,4
 	@./treeUnpacker.exe -j 6 float $(DATAFILE) /run/user/$$UID/out.root -z lz4,4
 	@./treeUnpacker.exe -j 6 float24 $(DATAFILE) /run/user/$$UID/out.root -z lz4,4
 	@./rntupleUnpacker.exe -j 6 floats $(DATAFILE)  /run/user/$$UID/out.root -z lz4,4

@@ -18,6 +18,7 @@ The new unpacker produces one list of Puppi objects, in different possible forma
 The unpacker have different layouts and formats:
  * `floats`: data members are unpacked to floats (same as the `float` format of the TTree unpacker above), and each variable is saved independently as `std::vector<float>` (or of short integers)
  * `coll_float`: Puppi objects are saved as a RNTuple collection, with individual variables saved as floats.
+ * `ints`, `coll_int`: data members are unpacked to integers, as per the `int` format of the TTree unpacker, and saved as std::vector's (`ints`) or using a RNTuple collection (`coll_int`).
  * `raw64`:  each puppi candidate is saved as a packed `uint64_t` word
 
 ### Realtime unpacker (liveUnpacker.exe)
