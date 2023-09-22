@@ -49,6 +49,8 @@ UnpackerBase::Report RNTupleUnpackerRaw64::unpack(const std::vector<std::string>
     entries++;
   }
   // close
+  if (writer)
+    writer.reset();
   double dt = (std::chrono::duration<double>(std::chrono::steady_clock::now() - tstart)).count();
   return makeReport(dt, entries, ins, out);
 }

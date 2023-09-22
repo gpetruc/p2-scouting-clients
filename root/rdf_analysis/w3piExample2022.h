@@ -13,10 +13,10 @@ class w3piExample2022 : public rdfAnalysis {
 public:
   w3piExample2022(const std::string &cutChoice, bool verbose);
   ~w3piExample2022() override {}
-  void run(const std::string &informat,
-           const std::vector<std::string> &infiles,
-           const std::string &outformat,
-           const std::string &outfile) const override;
+  Report run(const std::string &informat,
+             const std::vector<std::string> &infiles,
+             const std::string &outformat,
+             const std::string &outfile) const override;
 
 private:
   struct Cuts {
@@ -37,9 +37,9 @@ private:
 
   void analyze(ROOT::RDataFrame &d,
                const std::string &format,
-               unsigned int &ntot,
-               unsigned int &npre,
-               unsigned int &npass,
+               unsigned long int &ntot,
+               unsigned long int &npre,
+               unsigned long int &npass,
                const std::string &outputformat,
                const std::string &outFile) const;
 

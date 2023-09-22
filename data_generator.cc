@@ -332,6 +332,10 @@ int main(int argc, char **argv) {
   std::string kind = argv[optind++];
   std::string srcFile = argv[optind++];
   ResamplerData srcData(srcFile);
+  if (srcData.events.empty()) {
+    printf("File %s can't be read, or contains no events\n", srcFile.c_str());
+    return 3;
+  }
 
   std::string target = argv[optind++];
 

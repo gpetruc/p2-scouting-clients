@@ -38,13 +38,20 @@ liveUnpacker.exe: liveUnpacker.cc $(RNTUPLE_UNPACKER_OBJ) $(TREE_UNPACKER_OBJ)
 	$(CC) $(CCFLAGS) $(LIBS) $^ -I$(LCG)/include -ltbb  -o $@
 
 env:
+	@echo "source /cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/setup.sh"
+
+envdev:
 	@echo "source /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt/setup.sh"
+
+env9dev:
+	@echo "source /cvmfs/sft.cern.ch/lcg/views/dev3/latest/x86_64-el9-gcc13-opt/setup.sh"
 
 format:
 	@clang-format -i puppi.h unpack.cc rntuple_unpack.cc
 	@clang-format -i $(TREE_UNPACKER_SRC) $(TREE_UNPACKER_SRC:.cc=.h) TTreeUnpackMain.cc 
 	@clang-format -i $(RNTUPLE_UNPACKER_SRC) $(RNTUPLE_UNPACKER_SRC:.cc=.h) RNTupleUnpackMain.cc 
 	@clang-format -i liveUnpacker.cc 
+	@cd rdf_analysis && make format
 
 clean:
 	@rm *.exe *.root *.o  MyDict.cxx MyDict_rdict.pcm 2> /dev/null || true
@@ -89,7 +96,7 @@ run_test_multi: treeUnpacker.exe rntupleUnpacker.exe
 	@./rntupleUnpacker.exe puppi floats /run/user/$$UID/in{1,2,3,4,5,6}.dump /run/user/$$UID/out.root
 	@./rntupleUnpacker.exe puppi coll_float /run/user/$$UID/in{1,2,3,4,5,6}.dump /run/user/$$UID/out.root
 
-run_test_comp: treeUnpacker.exe puppi rntupleUnpacker.exe
+run_test_comp: treeUnpacker.exe rntupleUnpacker.exe
 	@echo "==== With LZ4 output ===="
 	@./treeUnpacker.exe puppi int $(DATAFILE) /run/user/$$UID/out.root -j 6 -z lz4,4
 	@./rntupleUnpacker.exe puppi ints $(DATAFILE)  /run/user/$$UID/out.root -j 6 -z lz4,4

@@ -358,7 +358,7 @@ int tbbLiveUnpacker(unsigned int threads,
 }
 
 int main(int argc, char **argv) {
-  if (argc < 5) {
+  if (argc < 6) {
     usage();
     return 1;
   }
@@ -412,6 +412,10 @@ int main(int argc, char **argv) {
   }
 
   int iarg = optind, narg = argc - optind;
+  if (narg != 5) {
+    usage();
+    return 1;
+  }
   std::string obj = std::string(argv[iarg]);
   std::string kind = std::string(argv[iarg + 1]);
   std::string format = std::string(argv[iarg + 2]);

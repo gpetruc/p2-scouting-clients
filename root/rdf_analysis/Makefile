@@ -1,6 +1,6 @@
 CC = c++
 CCFLAGS = -ggdb --std=c++17 -W -Wall -Wno-unused-variable -Ofast -march=native   $(shell root-config --cflags)
-LIBS = -lstdc++ $(shell root-config --ldflags --libs) -lROOTNTuple -L/cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/lib64 
+LIBS = -lstdc++ $(shell root-config --ldflags --libs) -lROOTNTuple  
 LCG ?= /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt
 
 .PHONY: clean env format 
@@ -26,23 +26,26 @@ env:
 envdev:
 	@echo "source /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt/setup.sh"
 
+env9dev:
+	@echo "source /cvmfs/sft.cern.ch/lcg/views/dev3/latest/x86_64-el9-gcc13-opt/setup.sh"
+
 format:
-	@clang-format -i *.cc
+	@clang-format -i *.cc *.h
 
 clean:
-	@rm *.exe *.root  2> /dev/null || true
+	@rm *.o *.exe *.root *.raw  2> /dev/null || true
 
 testInput_TTree.root:
-	../treeUnpacker.exe float ../data/SingleNeutrino.dump  testInput_TTree.root
+	../treeUnpacker.exe puppi float ../data/Puppi.dump  testInput_TTree.root
 
 testInput_TTree_int.root:
-	../treeUnpacker.exe int ../data/SingleNeutrino.dump  testInput_TTree_int.root
+	../treeUnpacker.exe puppi int ../data/Puppi.dump  testInput_TTree_int.root
 
 testInput_RNTuple_coll.root:
-	../rntupleUnpacker.exe coll_float ../data/SingleNeutrino.dump  testInput_RNTuple_coll.root
+	../rntupleUnpacker.exe puppi coll_float ../data/Puppi.dump  testInput_RNTuple_coll.root
 
 testInput_RNTuple_vec.root:
-	../rntupleUnpacker.exe floats ../data/SingleNeutrino.dump  testInput_RNTuple_vec.root
+	../rntupleUnpacker.exe puppi floats ../data/Puppi.dump  testInput_RNTuple_vec.root
 
 run_tests: run.exe testInput_TTree.root testInput_TTree_int.root testInput_RNTuple_coll.root testInput_RNTuple_vec.root
 	./run.exe w3piExample2022 loose testInput_TTree.root -f tree
@@ -61,7 +64,7 @@ run_tests_output: run.exe testInput_TTree.root testInput_TTree_int.root testInpu
 	./run.exe w3piExample2022 loose testInput_RNTuple_coll.root -f rntuple_coll -o rawhisto histo_fromRN.raw
 
 
-DATAFILE ?= data/SingleNeutrino.dump
+DATAFILE ?= data/Puppi.dump
 TREEFILE ?= /run/user/$$UID/ttree.root
 TREE24FILE ?= /run/user/$$UID/ttree_24.root
 TREEINTFILE ?= /run/user/$$UID/ttree_int.root
@@ -70,11 +73,11 @@ RNTVFILE ?= /run/user/$$UID/rnt_vec.root
 
 run_test_speed: ./run.exe
 	@echo "=== Create inputs ==="
-	../treeUnpacker.exe float $(DATAFILE) $(TREEFILE) > /dev/null
-	../treeUnpacker.exe float24 $(DATAFILE) $(TREE24FILE) > /dev/null
-	../treeUnpacker.exe int $(DATAFILE) $(TREEINTFILE) > /dev/null
-	../rntupleUnpacker.exe coll_float $(DATAFILE) $(RNTCFILE) > /dev/null
-	../rntupleUnpacker.exe floats $(DATAFILE) $(RNTVFILE) > /dev/null
+	../treeUnpacker.exe puppi float $(DATAFILE) $(TREEFILE) > /dev/null
+	../treeUnpacker.exe puppi float24 $(DATAFILE) $(TREE24FILE) > /dev/null
+	../treeUnpacker.exe puppi int $(DATAFILE) $(TREEINTFILE) > /dev/null
+	../rntupleUnpacker.exe puppi coll_float $(DATAFILE) $(RNTCFILE) > /dev/null
+	../rntupleUnpacker.exe puppi floats $(DATAFILE) $(RNTVFILE) > /dev/null
 	@echo "=== W->3pi 2022 NO OUTPUT ==="
 	./run.exe w3piExample2022 loose $(TREEFILE) -f tree 
 	./run.exe w3piExample2022 loose $(TREE24FILE) -f tree 

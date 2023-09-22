@@ -13,7 +13,7 @@ inline void parseHeader(const uint64_t &header, uint16_t &run, uint16_t &bx, uin
   bx = (header >> 12) & 0xFFF;
   orbit = (header >> 24) & 0X3FFFFFFF;
   run = (header >> 54);
-  good = (header & (1llu << 61));
+  good = !(header & (1llu << 61));
 }
 inline void readheader(
     std::fstream &fin, uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, uint16_t &npuppi) {

@@ -12,6 +12,7 @@
 
 #include "ROOT/RNTupleDS.hxx"
 #include <ROOT/RSnapshotOptions.hxx>
+#include <chrono>
 
 w3piExample2022::w3piExample2022(const std::string &cutChoice, bool verbose) : verbose_(verbose) {
   if (cutChoice == "loose") {
@@ -39,9 +40,9 @@ w3piExample2022::w3piExample2022(const std::string &cutChoice, bool verbose) : v
 
 void w3piExample2022::analyze(ROOT::RDataFrame &d,
                               const std::string &format,
-                              unsigned int &ntot,
-                              unsigned int &npre,
-                              unsigned int &npass,
+                              unsigned long int &ntot,
+                              unsigned long int &npre,
+                              unsigned long int &npass,
                               const std::string &outFormat,
                               const std::string &outFile) const {
   //speeds up code to have an initial filter that does not read many branches
@@ -186,7 +187,7 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
                                       "Triplet_Index",
                                       "Triplet_Mass"};
   bool isMC = false;
-  bool isInt = (format.length() >= 4 && format.substr(format.length()-4) == "_int");
+  bool isInt = (format.length() >= 4 && format.substr(format.length() - 4) == "_int");
   if (format == "tree" || format == "tree_int" || format == "rntuple_vec") {
     c_pt = "Puppi_pt";
     c_eta = "Puppi_eta";
@@ -200,7 +201,7 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
     c_pt = "Puppi_pt";
     c_eta = "L1Puppi_eta";
     c_phi = "L1Puppi_phi";
-    c_pdgId = "Puppi_pdgId"; // this we redefine
+    c_pdgId = "Puppi_pdgId";  // this we redefine
     c_dxy = "L1Puppi_dxy";
     c_z0 = "L1Puppi_z0";
     c_wpuppi = "L1Puppi_wpuppi";
@@ -231,14 +232,14 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
   auto c0 = d.Count();
   auto d1 = isMC ? d.Define("Puppi_pdgId", convertIds, {"L1Puppi_pdgId"}).Filter(initptcut, {c_pt, c_pdgId})
                  : (isInt ? d.Redefine("Puppi_pt", unpackPt, {c_pt})
-                                               .Redefine("Puppi_eta", unpackEtaPhi, {"Puppi_eta"})
-                                               .Redefine("Puppi_phi", unpackEtaPhi, {"Puppi_phi"})
-                                               .Define("Puppi_pdgId", unpackPID, {"Puppi_pid"})
-                                               .Redefine("Puppi_dxy", unpackDxy, {"Puppi_dxy"})
-                                               .Redefine("Puppi_z0", unpackZ0, {"Puppi_z0"})
-                                               .Redefine("Puppi_wpuppi", unpackWPuppi, {"Puppi_wpuppi"})
-                                               .Filter(initptcut, {c_pt, c_pdgId})
-                                         : d.Filter(initptcut, {c_pt, c_pdgId}));
+                                .Redefine("Puppi_eta", unpackEtaPhi, {"Puppi_eta"})
+                                .Redefine("Puppi_phi", unpackEtaPhi, {"Puppi_phi"})
+                                .Define("Puppi_pdgId", unpackPID, {"Puppi_pid"})
+                                .Redefine("Puppi_dxy", unpackDxy, {"Puppi_dxy"})
+                                .Redefine("Puppi_z0", unpackZ0, {"Puppi_z0"})
+                                .Redefine("Puppi_wpuppi", unpackWPuppi, {"Puppi_wpuppi"})
+                                .Filter(initptcut, {c_pt, c_pdgId})
+                          : d.Filter(initptcut, {c_pt, c_pdgId}));
   auto c1 = d1.Count();
   auto d2 = d1.Define("Triplet_Index", maketriplets, {c_pdgId, c_pt, c_eta, c_phi})
                 .Filter(notempty, {"Triplet_Index"})
@@ -296,10 +297,11 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
   }
 }
 
-void w3piExample2022::run(const std::string &format,
-                          const std::vector<std::string> &infiles,
-                          const std::string &outformat,
-                          const std::string &outfile) const {
+rdfAnalysis::Report w3piExample2022::run(const std::string &format,
+                                         const std::vector<std::string> &infiles,
+                                         const std::string &outformat,
+                                         const std::string &outfile) const {
+  auto tstart = std::chrono::steady_clock::now();
   //increase verbosity to see how long this is taking
   auto verbosity = ROOT::Experimental::RLogScopedVerbosity(
       ROOT::Detail::RDF::RDFLogChannel(),
@@ -308,8 +310,7 @@ void w3piExample2022::run(const std::string &format,
   auto rntVerbosity =
       ROOT::Experimental::RLogScopedVerbosity(ROOT::Experimental::NTupleLog(), ROOT::Experimental::ELogLevel::kError);
 
-  TStopwatch timer;
-  unsigned int ntot, npre, npass;
+  unsigned long int ntot, npre, npass;
   if (format.find("rntuple") == 0) {
     assert(infiles.size() == 1);
     ROOT::RDataFrame d = ROOT::RDF::Experimental::FromRNTuple("Events", infiles.front());
@@ -317,22 +318,20 @@ void w3piExample2022::run(const std::string &format,
     analyze(d, format, ntot, npre, npass, outformat, outfile);
   } else {
     ROOT::RDataFrame d("Events", infiles);
+    //d.Describe().Print();
     analyze(d, format, ntot, npre, npass, outformat, outfile);
   }
 
-  timer.Stop();
-  printf(
-      "Run on %d files (%s), %9u events, preselected %8u events (%.4f), selected %8u events (%.6f) in %7.3f s (%7.1f "
-      "kHz, 40 MHz / "
-      "%.1f)\n",
-      int(infiles.size()),
-      infiles.front().c_str(),
-      ntot,
-      npre,
-      npre / float(ntot),
-      npass,
-      npass / float(ntot),
-      timer.RealTime(),
-      ntot * .001 / timer.RealTime(),
-      40e6 * timer.RealTime() / ntot);
+  double dt = (std::chrono::duration<double>(std::chrono::steady_clock::now() - tstart)).count();
+  auto ret = makeReport(dt, ntot, infiles, outfile);
+  printf("Run on %d files (%s), %lu events, preselected %lu events (%.4f), selected %lu events (%.6f).\n",
+         int(infiles.size()),
+         infiles.front().c_str(),
+         ntot,
+         npre,
+         npre / float(ntot),
+         npass,
+         npass / float(ntot));
+
+  return ret;
 }

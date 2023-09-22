@@ -15,7 +15,7 @@
 
 #include <getopt.h>
 
-#include "../root/unpack.h"
+#include "../unpack.h"
 
 template <typename FltType, typename FltBuilderType = typename arrow::TypeTraits<FltType>::BuilderType>
 void run_ipc(std::vector<std::fstream> &fins,
@@ -488,7 +488,7 @@ int main(int argc, char **argv) {
         arrow::SetCpuThreadPoolCapacity(cputhreads);
         break;
       case 'z': {
-        std::string compressionMethod = std::string(optarg);
+        compressionMethod = std::string(optarg);
         auto pos = compressionMethod.find(",");
         if (pos != std::string::npos) {
           compressionLevel = std::atoi(compressionMethod.substr(pos + 1).c_str());
@@ -570,5 +570,5 @@ int main(int argc, char **argv) {
   double time = (std::chrono::duration<double>(tend - tstart)).count();
   if (batchsize)
     printf("Wrote %lu record batches of size %lu, %.1f kHz\n", nbatches, batchsize, nbatches / 1000. / time);
-  report(time, time, entries, ins, output);
+  printReport(makeReport(time, entries, ins, output));
 }

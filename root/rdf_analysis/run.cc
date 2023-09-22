@@ -88,5 +88,30 @@ int main(int argc, char **argv) {
     return 2;
   }
 
-  analyzer->run(format, ins, outputFormat, output);
+  auto report = analyzer->run(format, ins, outputFormat, output);
+  if (output.empty()) {
+    printf(
+        "Run on %d files, %lu events in %.3f s (%.1f kHz, 40 MHz / %.1f); "
+        "Size %.1f GB; Rate %.1f Gbps.\n",
+        int(ins.size()),
+        report.entries,
+        report.time,
+        report.entries * .001 / report.time,
+        40e6 * report.time / report.entries,
+        report.bytes_in / (1024. * 1024. * 1024.),
+        report.bytes_in / (1024. * 1024. * 1024.) * 8 / report.time);
+  } else {
+    printf(
+        "Run on %d files, %lu events in %.3f s (%.1f kHz, 40 MHz / %.1f); "
+        "Size %.1f GB in, %.3f GB out; Rate %.1f Gbps in, %.2f Gbps out.\n",
+        int(ins.size()),
+        report.entries,
+        report.time,
+        report.entries * .001 / report.time,
+        40e6 * report.time / report.entries,
+        report.bytes_in / (1024. * 1024. * 1024.),
+        report.bytes_out / (1024. * 1024. * 1024.),
+        report.bytes_in / (1024. * 1024. * 1024.) * 8 / report.time,
+        report.bytes_out / (1024. * 1024. * 1024.) * 8 / report.time);
+  }
 }

@@ -15,7 +15,7 @@ format:
 	@cd root && make format
 
 clean:
-	@rm *.exe *.data
+	@rm *.exe *.data 2> /dev/null || true
 
 run_tests: data_checker.exe data_generator.exe
 	@echo "Running basic file tests"
