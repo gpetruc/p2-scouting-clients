@@ -10,7 +10,7 @@
 #include <string>
 #include <getopt.h>
 
-#include "unpack.h"
+#include "../unpack.h"
 #include "puppi.h"
 
 void usage() {
@@ -294,7 +294,7 @@ int main(int argc, char **argv) {
     return 4;
   }
   timer.Stop();
-  double tcpu = timer.CpuTime(), treal = timer.RealTime();
-  report(tcpu, treal, entries, ins, output);
+  double treal = timer.RealTime();
+  printReport(makeReport(treal, entries, ins, output));
   return 0;
 }

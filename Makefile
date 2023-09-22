@@ -10,7 +10,7 @@ all: data_checker.exe  data_generator.exe
 	$(CC) $(CCFLAGS) $(LIBS) $< -o $@
 
 format:
-	clang-format -i data_checker.cc
+	clang-format -i data_checker.cc data_generator.cc unpack.h UnpackerBase.h
 	@cd apache && make format
 	@cd root && make format
 
@@ -27,7 +27,7 @@ run_tests: data_checker.exe data_generator.exe
 	bash -c "(sleep 1 && cat data/tcp_gen4_dth256.data > /dev/tcp/127.0.0.1/8888 &)"
 	./data_checker.exe DTHReceive256 127.0.0.1:8888 native64sz.data
 	./data_checker.exe Native64SZ native64sz.data
-	./data_generator.exe Native64 root/data/SingleNeutrino.dump native64sz.data --orbits 100 && ./data_checker.exe Native64 native64sz.data
-	./data_generator.exe DTHBasic256 root/data/SingleNeutrino.dump dth256.data --orbits 100 && ./data_checker.exe DTHBasic256 dth256.data
-	bash -c "(sleep 1 && ./data_generator.exe DTHBasic256 root/data/SingleNeutrino.dump 127.0.0.1:8888 --orbits 1000 -n 2 --sync &)"
+	./data_generator.exe Native64 root/data/Puppi.dump native64sz.data --orbits 100 && ./data_checker.exe Native64 native64sz.data
+	./data_generator.exe DTHBasic256 root/data/Puppi.dump dth256.data --orbits 100 && ./data_checker.exe DTHBasic256 dth256.data
+	bash -c "(sleep 1 && ./data_generator.exe DTHBasic256 root/data/Puppi.dump 127.0.0.1:8888 --orbits 1000 -n 2 --sync &)"
 	./data_checker.exe DTHBasic256 127.0.0.1:8888 -n 2

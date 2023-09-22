@@ -1,8 +1,8 @@
 #include "TTreeUnpackerFloats.h"
 #include <TTree.h>
-#include "unpack.h"
+#include "../unpack.h"
 
-unsigned long int TTreeUnpackerFloats::unpack(const std::vector<std::string> &ins, const std::string &out) const {
+UnpackerBase::Report TTreeUnpackerFloats::unpack(const std::vector<std::string> &ins, const std::string &out) const {
   Data data;
   auto book = [&](TTree *tree, uint16_t &npuppi, uint64_t /*header*/, uint64_t /*payload*/[255], Data &d) {
     std::string F = (floatType_ == "float24" ? "f" : "F");

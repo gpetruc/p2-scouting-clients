@@ -1,19 +1,20 @@
 #ifndef p2_clients_RNTupleUnpackerBase_h
 #define p2_clients_RNTupleUnpackerBase_h
+#include <chrono>
 #include <TROOT.h>
 #include <TFile.h>
 #include <ROOT/RNTuple.hxx>
 #include <ROOT/RNTupleModel.hxx>
 #include <ROOT/RNTupleUtil.hxx>
 #include "../UnpackerBase.h"
-#include "unpack.h"
+#include "../unpack.h"
 
 class RNTupleUnpackerBase : public UnpackerBase {
 public:
   RNTupleUnpackerBase() : compression_(0) {}
   ~RNTupleUnpackerBase() override {}
 
-  unsigned long int unpack(const std::vector<std::string> &ins, const std::string &out) const override = 0;
+  Report unpack(const std::vector<std::string> &ins, const std::string &out) const override = 0;
   void setThreads(unsigned int threads) override;
   void setCompression(const std::string &algo, unsigned int level) override;
 
@@ -21,8 +22,9 @@ protected:
   int compression_;
 
   template <typename T, typename B, typename D>
-  unsigned long int unpackBase(
+  Report unpackBase(
       const std::vector<std::string> &ins, const std::string &out, T &data, B makeModel, D fillModel) const {
+    auto tstart = std::chrono::steady_clock::now();
     std::vector<std::fstream> fins;
     for (auto &in : ins) {
       fins.emplace_back(in, std::ios_base::in | std::ios_base::binary);
@@ -67,7 +69,8 @@ protected:
       entries++;
     }
     // close
-    return entries;
+    double dt = (std::chrono::duration<double>(std::chrono::steady_clock::now() - tstart)).count();
+    return makeReport(dt, entries, ins, out);
   }
 };
 

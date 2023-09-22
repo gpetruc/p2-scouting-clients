@@ -1,11 +1,11 @@
 CC = c++
 CCFLAGS = --std=c++17 -W -Wall -Wno-unused-variable -Ofast -march=native -Wno-unused-result
 LIBS = -L/cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/lib64 -lstdc++ -larrow 
-DATAFILE ?= ../root/data/SingleNeutrino.dump
+DATAFILE ?= ../root/data/Puppi.dump
 
 .PHONY: clean env format run_test_unpack run_test_speed run_test_comp
 
-all: arrow.exe
+all: arrow.exe arrow_read.exe
 
 %.exe : %.cc ../root/unpack.h
 	$(CC) $(CCFLAGS) $(LIBS) $< -o $@
@@ -48,7 +48,7 @@ run_test_comp: arrow.exe
 
 run_test_unpack: arrow.exe
 	@for T in ipc_float ipc_float16 ipc_float_bulk ipc_float16_bulk  ipc_int_bulk ipc_raw64_bulk ; do  \
-		./arrow.exe $$T ../root/data/SingleNeutrino.dump $${T}.arrow; \
+		./arrow.exe $$T ../root/data/Puppi.dump $${T}.arrow; \
 	done
 
 run_test_multi: arrow.exe

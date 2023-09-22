@@ -7,7 +7,7 @@
 #include <TROOT.h>
 #include <TStopwatch.h>
 #include <string>
-#include "unpack.h"
+#include "../unpack.h"
 
 void usage() {
   printf("Usage: unpack.exe [-j N] <layout> <type> infile.dump [ outfile.root [ <compression> <level> ]\n");

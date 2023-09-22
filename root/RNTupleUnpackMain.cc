@@ -6,11 +6,15 @@
 #include "RNTupleUnpackerInts.h"
 #include "RNTupleUnpackerCollInt.h"
 #include "RNTupleUnpackerRaw64.h"
+#include "GMTTkMuRNTupleUnpackerFloats.h"
+#include "GMTTkMuRNTupleUnpackerCollFloat.h"
 #include <getopt.h>
 
 void usage() {
-  printf("Usage: rntupleUnpacker.exe [ options ] <format> infile.dump [infile2.dump ...] [ outfile.root ]\n");
-  printf("  format   := floats | coll_float | raw64\n");
+  printf("Usage: rntupleUnpacker.exe [ options ] <obj> <format> infile.dump [infile2.dump ...] [ outfile.root ]\n");
+  printf("  obj := puppi | tkmu \n");
+  printf("  puppi format   := floats | coll_float | ints | coll_int | raw64\n");
+  printf("  tkmu  format   := floats | coll_float\n");
   printf("Options: \n");
   printf("  -j N            : multithread with N threads\n");
   printf("  -z algo[,level] : enable compression\n");
@@ -18,7 +22,7 @@ void usage() {
   printf("                    default level is 4\n");
 }
 int main(int argc, char **argv) {
-  if (argc < 3) {
+  if (argc < 4) {
     usage();
     return 1;
   }
@@ -62,13 +66,14 @@ int main(int argc, char **argv) {
   }
 
   int iarg = optind, narg = argc - optind;
-  std::string format = std::string(argv[iarg]);
-  printf("Will run rntuple with format %s\n", argv[iarg]);
+  std::string obj = std::string(argv[iarg]);
+  std::string format = std::string(argv[iarg + 1]);
+  printf("Will run rntuple %s with format %s\n", argv[iarg], argv[iarg + 1]);
 
   std::vector<std::string> ins;
   std::string output;
 
-  for (int i = iarg + 1; i < iarg + narg; ++i) {
+  for (int i = iarg + 2; i < iarg + narg; ++i) {
     std::string fname = argv[i];
     if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".root") {
       if (!output.empty()) {
@@ -84,29 +89,34 @@ int main(int argc, char **argv) {
   std::unique_ptr<RNTupleUnpackerBase> unpacker;
   int ret = 0;
   try {
-    if (format == "floats") {
-      unpacker = std::make_unique<RNTupleUnpackerFloats>();
-    } else if (format == "coll_float") {
-      unpacker = std::make_unique<RNTupleUnpackerCollFloat>();
-    } else if (format == "ints") {
-      unpacker = std::make_unique<RNTupleUnpackerInts>();
-    } else if (format == "coll_int") {
-      unpacker = std::make_unique<RNTupleUnpackerCollInt>();
-    } else if (format == "raw64") {
-      unpacker = std::make_unique<RNTupleUnpackerRaw64>();
-    } else {
-      printf("Unsupported output format %s\n", format.c_str());
+    if (obj == "puppi") {
+      if (format == "floats") {
+        unpacker = std::make_unique<RNTupleUnpackerFloats>();
+      } else if (format == "coll_float") {
+        unpacker = std::make_unique<RNTupleUnpackerCollFloat>();
+      } else if (format == "ints") {
+        unpacker = std::make_unique<RNTupleUnpackerInts>();
+      } else if (format == "coll_int") {
+        unpacker = std::make_unique<RNTupleUnpackerCollInt>();
+      } else if (format == "raw64") {
+        unpacker = std::make_unique<RNTupleUnpackerRaw64>();
+      }
+    } else if (obj == "tkmu") {
+      if (format == "floats") {
+        unpacker = std::make_unique<GMTTkMuRNTupleUnpackerFloats>();
+      } else if (format == "coll_float") {
+        unpacker = std::make_unique<GMTTkMuRNTupleUnpackerCollFloat>();
+      }
+    }
+    if (!unpacker) {
+      printf("Unsupported object type %s and/or output format %s\n", obj.c_str(), format.c_str());
       return 1;
     }
     unpacker->setCompression(compressionMethod, compressionLevel);
     if (threads != -1)
       unpacker->setThreads(threads);
-    TStopwatch timer;
-    timer.Start();
-    unsigned long entries = unpacker->unpack(ins, output);
-    timer.Stop();
-    double tcpu = timer.CpuTime(), treal = timer.RealTime();
-    report(tcpu, treal, entries, ins, output);
+    auto report = unpacker->unpack(ins, output);
+    printReport(report);
   } catch (const std::exception &e) {
     printf("Terminating an exception was raised:\n%s\n", e.what());
     ret = 1;

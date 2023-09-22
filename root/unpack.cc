@@ -9,7 +9,7 @@
 #include <string>
 #include <getopt.h>
 
-#include "unpack.h"
+#include "../unpack.h"
 
 void usage() {
   printf("Usage: unpack.exe [ options ] <layout> <type> infile.dump [infile2.dump ...] [ outfile.root ]\n");
@@ -398,7 +398,7 @@ int main(int argc, char **argv) {
     fout->Close();
   }
   timer.Stop();
-  double tcpu = timer.CpuTime(), treal = timer.RealTime();
-  report(tcpu, treal, entries, ins, output);
+  double treal = timer.RealTime();
+  printReport(makeReport(treal, entries, ins, output));
   return 0;
 }

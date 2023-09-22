@@ -1,13 +1,16 @@
-#include <TStopwatch.h>
 #include "TTreeUnpackerBase.h"
 #include "TTreeUnpackerFloats.h"
 #include "TTreeUnpackerInts.h"
 #include "TTreeUnpackerRaw64.h"
+#include "GMTTkMuTTreeUnpackerFloats.h"
+#include "GMTTkMuTTreeUnpackerInts.h"
 #include <getopt.h>
 
 void usage() {
-  printf("Usage: treeUnpacker.exe [ options ] <format> infile.dump [infile2.dump ...] [ outfile.root ]\n");
-  printf("  format   := float | float24 | int | raw64\n");
+  printf("Usage: treeUnpacker.exe [ options ] <obj> <format> infile.dump [infile2.dump ...] [ outfile.root ]\n");
+  printf("  obj := puppi | tkmu \n");
+  printf("  puppi format := float | float24 | int | raw64\n");
+  printf("  tkmu  format := float | float24 | int\n");
   printf("Options: \n");
   printf("  -j N            : multithread with N threads\n");
   printf("  -z algo[,level] : enable compression\n");
@@ -15,7 +18,7 @@ void usage() {
   printf("                    default level is 4\n");
 }
 int main(int argc, char **argv) {
-  if (argc < 3) {
+  if (argc < 4) {
     usage();
     return 1;
   }
@@ -55,13 +58,14 @@ int main(int argc, char **argv) {
   }
 
   int iarg = optind, narg = argc - optind;
-  std::string format = std::string(argv[iarg]);
-  printf("Will run with format %s\n", argv[iarg]);
+  std::string obj = std::string(argv[iarg]);
+  std::string format = std::string(argv[iarg + 1]);
+  printf("Will run %s with format %s\n", argv[iarg], argv[iarg + 1]);
 
   std::vector<std::string> ins;
   std::string output;
 
-  for (int i = iarg + 1; i < iarg + narg; ++i) {
+  for (int i = iarg + 2; i < iarg + narg; ++i) {
     std::string fname = argv[i];
     if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".root") {
       if (!output.empty()) {
@@ -77,25 +81,30 @@ int main(int argc, char **argv) {
   std::unique_ptr<TTreeUnpackerBase> unpacker;
   int ret = 0;
   try {
-    if (format == "float" || format == "float24") {
-      unpacker = std::make_unique<TTreeUnpackerFloats>(format);
-    } else if (format == "int") {
-      unpacker = std::make_unique<TTreeUnpackerInts>();
-    } else if (format == "raw64") {
-      unpacker = std::make_unique<TTreeUnpackerRaw64>();
-    } else {
-      printf("Unsupported outpt format %s\n", format.c_str());
+    if (obj == "puppi") {
+      if (format == "float" || format == "float24") {
+        unpacker = std::make_unique<TTreeUnpackerFloats>(format);
+      } else if (format == "int") {
+        unpacker = std::make_unique<TTreeUnpackerInts>();
+      } else if (format == "raw64") {
+        unpacker = std::make_unique<TTreeUnpackerRaw64>();
+      }
+    } else if (obj == "tkmu") {
+      if (format == "float" || format == "float24") {
+        unpacker = std::make_unique<GMTTkMuTTreeUnpackerFloats>(format.substr(5));
+      } else if (format == "int") {
+        unpacker = std::make_unique<GMTTkMuTTreeUnpackerInts>();
+      }
+    }
+    if (!unpacker) {
+      printf("Unsupported object type %s and/or output format %s\n", obj.c_str(), format.c_str());
       return 1;
     }
     unpacker->setCompression(compressionMethod, compressionLevel);
     if (threads != -1)
       unpacker->setThreads(threads);
-    TStopwatch timer;
-    timer.Start();
-    unsigned long entries = unpacker->unpack(ins, output);
-    timer.Stop();
-    double tcpu = timer.CpuTime(), treal = timer.RealTime();
-    report(tcpu, treal, entries, ins, output);
+    auto report = unpacker->unpack(ins, output);
+    printReport(report);
   } catch (const std::exception &e) {
     printf("Terminating an exception was raised:\n%s\n", e.what());
     ret = 1;

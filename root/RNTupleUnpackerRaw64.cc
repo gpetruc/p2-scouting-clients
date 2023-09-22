@@ -1,7 +1,9 @@
 #include "RNTupleUnpackerRaw64.h"
-#include "unpack.h"
+#include <chrono>
+#include "../unpack.h"
 
-unsigned long int RNTupleUnpackerRaw64::unpack(const std::vector<std::string> &ins, const std::string &out) const {
+UnpackerBase::Report RNTupleUnpackerRaw64::unpack(const std::vector<std::string> &ins, const std::string &out) const {
+  auto tstart = std::chrono::steady_clock::now();
   std::vector<std::fstream> fins;
   for (auto &in : ins) {
     fins.emplace_back(in, std::ios_base::in | std::ios_base::binary);
@@ -19,7 +21,6 @@ unsigned long int RNTupleUnpackerRaw64::unpack(const std::vector<std::string> &i
 
   std::unique_ptr<ROOT::Experimental::RNTupleWriter> writer;
   if (!out.empty()) {
-    printf("Writing to %s\n", out.c_str());
     ROOT::Experimental::RNTupleWriteOptions options;
     options.SetCompression(compression_);
     writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", out.c_str(), options);
@@ -48,5 +49,6 @@ unsigned long int RNTupleUnpackerRaw64::unpack(const std::vector<std::string> &i
     entries++;
   }
   // close
-  return entries;
+  double dt = (std::chrono::duration<double>(std::chrono::steady_clock::now() - tstart)).count();
+  return makeReport(dt, entries, ins, out);
 }

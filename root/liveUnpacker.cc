@@ -14,16 +14,23 @@
 #include "RNTupleUnpackerInts.h"
 #include "RNTupleUnpackerCollInt.h"
 #include "RNTupleUnpackerRaw64.h"
+#include "GMTTkMuTTreeUnpackerFloats.h"
+#include "GMTTkMuTTreeUnpackerInts.h"
+#include "GMTTkMuRNTupleUnpackerFloats.h"
+#include "GMTTkMuRNTupleUnpackerCollFloat.h"
 #include <getopt.h>
 #include <libgen.h>
 #include <deque>
 #include <tbb/pipeline.h>
 
 void usage() {
-  printf("Usage: liveUnpacker.exe [ options ] <kind> <format> /path/to/input /path/to/outputs \n");
-  printf("  kind             := ttree rntuple\n");
-  printf("  ttree  formats   := float | float24 | int | raw64\n");
-  printf("  rntule formats   := floats | coll_float | raw64\n");
+  printf("Usage: liveUnpacker.exe [ options ] <obj> <kind> <format> /path/to/input /path/to/outputs \n");
+  printf("  obj  := puppi | tkmu \n");
+  printf("  kind := ttree rntuple\n");
+  printf("  puppi ttree  formats   := float | float24 | int | raw64\n");
+  printf("  puppi rntule formats   := floats | coll_float | ints | coll_int | raw64\n");
+  printf("  tkmu  ttree  formats   := float | float24 | int\n");
+  printf("  tkmu  rntule formats   := floats | coll_float\n");
   printf("Options: \n");
   printf("  --demux N       : demux N timeslices\n");
   printf("  -j N            : multithread with N threads\n");
@@ -33,37 +40,60 @@ void usage() {
   printf("  --delete        : delete unpacked output (for benchmarking without filling disks)\n");
 }
 
-std::unique_ptr<UnpackerBase> makeUnpacker(const std::string &kind,
+std::unique_ptr<UnpackerBase> makeUnpacker(const std::string &obj,
+                                           const std::string &kind,
                                            const std::string &format,
                                            const std::string &compressionMethod,
                                            int compressionLevel) {
   std::unique_ptr<UnpackerBase> unpacker;
-  if (kind == "ttree") {
-    if (format == "float" || format == "float24") {
-      unpacker = std::make_unique<TTreeUnpackerFloats>(format);
-    } else if (format == "int") {
-      unpacker = std::make_unique<TTreeUnpackerInts>();
-    } else if (format == "raw64") {
-      unpacker = std::make_unique<TTreeUnpackerRaw64>();
+  if (obj == "puppi") {
+    if (kind == "ttree") {
+      if (format == "float" || format == "float24") {
+        unpacker = std::make_unique<TTreeUnpackerFloats>(format);
+      } else if (format == "int") {
+        unpacker = std::make_unique<TTreeUnpackerInts>();
+      } else if (format == "raw64") {
+        unpacker = std::make_unique<TTreeUnpackerRaw64>();
+      } else {
+        printf("Unsupported ttree output format %s for %s\\n", format.c_str(), obj.c_str());
+      }
+    } else if (kind == "rntuple") {
+      if (format == "floats") {
+        unpacker = std::make_unique<RNTupleUnpackerFloats>();
+      } else if (format == "coll_float") {
+        unpacker = std::make_unique<RNTupleUnpackerCollFloat>();
+      } else if (format == "ints") {
+        unpacker = std::make_unique<RNTupleUnpackerInts>();
+      } else if (format == "coll_int") {
+        unpacker = std::make_unique<RNTupleUnpackerCollInt>();
+      } else if (format == "raw64") {
+        unpacker = std::make_unique<RNTupleUnpackerRaw64>();
+      } else {
+        printf("Unsupported rntuple output format %s for %s\\n", format.c_str(), obj.c_str());
+      }
     } else {
-      printf("Unsupported ttree output format %s\n", format.c_str());
+      printf("Unsupported kind %s for %s\n", kind.c_str(), obj.c_str());
     }
-  } else if (kind == "rntuple") {
-    if (format == "floats") {
-      unpacker = std::make_unique<RNTupleUnpackerFloats>();
-    } else if (format == "coll_float") {
-      unpacker = std::make_unique<RNTupleUnpackerCollFloat>();
-    } else if (format == "ints") {
-      unpacker = std::make_unique<RNTupleUnpackerInts>();
-    } else if (format == "coll_int") {
-      unpacker = std::make_unique<RNTupleUnpackerCollInt>();
-    } else if (format == "raw64") {
-      unpacker = std::make_unique<RNTupleUnpackerRaw64>();
+  } else if (obj == "tkmu") {
+    if (kind == "ttree") {
+      if (format == "float" || format == "float24") {
+        unpacker = std::make_unique<GMTTkMuTTreeUnpackerFloats>(format);
+      } else if (format == "int") {
+        unpacker = std::make_unique<GMTTkMuTTreeUnpackerInts>();
+      } else {
+        printf("Unsupported ttree output format %s for %s\\n", format.c_str(), obj.c_str());
+      }
+    } else if (kind == "rntuple") {
+      if (format == "floats") {
+        unpacker = std::make_unique<GMTTkMuRNTupleUnpackerFloats>();
+      } else if (format == "coll_float") {
+        unpacker = std::make_unique<GMTTkMuRNTupleUnpackerCollFloat>();
+      } else {
+        printf("Unsupported rntuple output format %s for %s\\n", format.c_str(), obj.c_str());
+      }
     } else {
-      printf("Unsupported rntuple output format %s\n", format.c_str());
+      printf("Unsupported kind %s for %s\n", kind.c_str(), obj.c_str());
     }
-  } else {
-    printf("Unsupported kind %s\n", kind.c_str());
   }
   if (unpacker)
     unpacker->setCompression(compressionMethod, compressionLevel);
@@ -88,10 +118,8 @@ public:
     if (token.inputs.empty())
       return;
     printf("Unpack %s[#%d] -> %s\n", token.inputs.front().c_str(), int(token.inputs.size()), token.output.c_str());
-    auto tstart = std::chrono::steady_clock::now();
-    unsigned long entries = unpacker_->unpack(token.inputs, token.output);
-    double dt = (std::chrono::duration<double>(std::chrono::steady_clock::now() - tstart)).count();
-    report(dt, entries, token.inputs, token.output);
+    auto report = unpacker_->unpack(token.inputs, token.output);
+    printReport(report);
     for (const auto &in : token.inputs)
       unlink(in.c_str());
     if (deleteAfterwards_)
@@ -384,13 +412,19 @@ int main(int argc, char **argv) {
   }
 
   int iarg = optind, narg = argc - optind;
-  std::string kind = std::string(argv[iarg]);
-  std::string format = std::string(argv[iarg + 1]);
-  std::string from = std::string(argv[iarg + 2]);
-  std::string to = std::string(argv[iarg + 3]);
-  printf("Will run %s format %s from %s to %s\n", argv[iarg], argv[iarg + 1], argv[iarg + 2], argv[iarg + 3]);
+  std::string obj = std::string(argv[iarg]);
+  std::string kind = std::string(argv[iarg + 1]);
+  std::string format = std::string(argv[iarg + 2]);
+  std::string from = std::string(argv[iarg + 3]);
+  std::string to = std::string(argv[iarg + 4]);
+  printf("Will run %s %s format %s from %s to %s\n",
+         argv[iarg],
+         argv[iarg + 1],
+         argv[iarg + 2],
+         argv[iarg + 3],
+         argv[iarg + 4]);
 
-  std::unique_ptr<UnpackerBase> unpacker = makeUnpacker(kind, format, compressionMethod, compressionLevel);
+  std::unique_ptr<UnpackerBase> unpacker = makeUnpacker(obj, kind, format, compressionMethod, compressionLevel);
   if (!unpacker)
     return 2;
   if (threads == -1) {

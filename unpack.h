@@ -1,10 +1,11 @@
-#ifndef p2_clients_root_unpack_h
-#define p2_clients_root_unpack_h
+#ifndef p2_clients_unpack_h
+#define p2_clients_unpack_h
 #include <cstdio>
 #include <cstdint>
 #include <fstream>
 #include <math.h>
 #include <sys/stat.h>
+#include "UnpackerBase.h"
 
 template <typename U>
 inline void parseHeader(const uint64_t &header, uint16_t &run, uint16_t &bx, uint32_t &orbit, bool &good, U &npuppi) {
@@ -331,96 +332,110 @@ inline void readevent(std::fstream &fin,
   }
 }
 
-#if 0
-inline void readgmt(std::fstream &fin,
-                      uint64_t &header,
-                      uint16_t &run,
-                      uint16_t &bx,
-                      uint32_t &orbit,
-                      bool &good,
-                      uint16_t &nmu,
-                      uint64_t (&data)[255],
-                      uint16_t (&pt)[255],
-                      int16_t (&eta)[255],
-                      int16_t (&phi)[255],
-                      int8_t (&charge)[255],
-                      int16_t (&z0)[255],
-                      int16_t (&dxy)[255],
-                      uint16_t (&quality)[255],
-                      uint16_t (&wpuppi)[255],
-                      uint16_t (&id)[255]) {  //int, combined
-  uint16_t nwords;
-  readheader(fin, header, run, bx, orbit, good, nwords);
-  if (nwords)
-    fin.read(reinterpret_cast<char *>(&data[0]), nwords * sizeof(uint64_t));
-  nmu = (nwords*3)/2;
-  uint32_t *data32 = reinterpret_cast<uint32_t *>(data);
-  uint32_t *ptr32 = data32;
-  for (uint16_t i = 0; i < mu; ++i) {
-    pt  = ((*ptr32) >> 1) & 0xFFFFF;
-    phi = ((*ptr32) >> 17) & ((1<<13)-1);
-    eta = ((*ptr32) >> 17) & ((1<<13)-1);
-    readshared(data[i], pt[i], eta[i], phi[i]);
-    pid[i] = (data[i] >> 37) & 0x7;
-    if (pid[i] > 1) {
-      readcharged(data[i], z0[i], dxy[i], quality[i]);
-      wpuppi[i] = 0;
-      id[i] = 0;
+template <unsigned int start, unsigned int bits = 16, typename T>
+inline uint16_t extractBitsFromW(const T word) {
+  return (word >> start) & ((1 << bits) - 1);
+}
+template <unsigned int start, unsigned int bits = 16, typename T>
+inline int16_t extractSignedBitsFromW(const T word) {
+  uint16_t raw = extractBitsFromW<start, bits>(word);
+  if ((bits < 16) && (raw & (1 << (bits - 1)))) {
+    constexpr uint16_t ormask = (1 << 16) - (1 << bits);
+    raw |= ormask;
+  }
+  return raw;
+}
+
+inline void decode_gmt_tkmu(const uint16_t nwords,
+                            const uint64_t data[255],
+                            uint16_t &nmu,
+                            uint16_t pt[255],
+                            int16_t eta[255],
+                            int16_t phi[255],
+                            int8_t charge[255],
+                            int16_t z0[255],
+                            int16_t d0[255],
+                            uint8_t quality[255],
+                            uint8_t isolation[255],
+                            uint8_t beta[255]) {
+  nmu = (nwords * 2) / 3;
+  const uint32_t *ptr32 = reinterpret_cast<const uint32_t *>(data);
+  for (uint16_t i = 0; i < nmu; ++i, ptr32 += 3) {
+    uint64_t wlo;
+    uint32_t whi;
+    if ((i & 1) == 0) {
+      wlo = *reinterpret_cast<const uint64_t *>(ptr32);
+      whi = *(ptr32 + 2);
     } else {
-      readneutral(data[i], wpuppi[i], id[i]);
-      z0[i] = 0;
-      dxy[i] = 0;
-      quality[i] = 0;
+      wlo = *reinterpret_cast<const uint64_t *>(ptr32 + 1);
+      whi = *ptr32;
     }
+    pt[i] = extractBitsFromW<1, 16>(wlo);
+    phi[i] = extractSignedBitsFromW<17, 13>(wlo);
+    eta[i] = extractSignedBitsFromW<30, 14>(wlo);
+    z0[i] = extractSignedBitsFromW<44, 10>(wlo);
+    d0[i] = extractSignedBitsFromW<54, 10>(wlo);
+    charge[i] = (whi & 1) ? -1 : +1;
+    quality[i] = extractBitsFromW<1, 4>(whi);
+    isolation[i] = extractBitsFromW<9, 4>(whi);
+    beta[i] = extractBitsFromW<13, 4>(whi);
   }
 }
-#endif
-
-inline void report(double tcpu, double treal, int entries, float insize, float outsize) {
-  float inrate = insize / (1024. * 1024.) / treal;
-  printf(
-      "Done in %.2fs (cpu), %.2fs (real). Event rate: %.1f kHz (40 MHz / %.1f), input data rate %.1f MB/s (%.1f "
-      "Gbps)\n",
-      tcpu,
-      treal,
-      entries / treal / 1000.,
-      (40e6 * treal / entries),
-      inrate,
-      inrate * 8 / 1024.);
-  if (outsize) {
-    float outrate = outsize / (1024. * 1024.) / treal;
-    float ratio = outsize / insize;
-    printf(
-        "Input file size: %.2f MB, Output file size: %.2f MB, File size ratio: %.3f, output data rate %.1f MB/s (%.1f "
-        "Gbps)\n\n",
-        insize / (1024. * 1024.),
-        outsize / (1024. * 1024.),
-        ratio,
-        outrate,
-        outrate * 8 / 1024);
-  } else {
-    printf("\n");
+inline void decode_gmt_tkmu(const uint16_t nwords,
+                            const uint64_t data[255],
+                            uint16_t &nmu,
+                            float pt[255],
+                            float eta[255],
+                            float phi[255],
+                            int8_t charge[255],
+                            float z0[255],
+                            float d0[255],
+                            uint8_t quality[255],
+                            uint8_t isolation[255],
+                            float beta[255]) {
+  nmu = (nwords * 2) / 3;
+  const uint32_t *ptr32 = reinterpret_cast<const uint32_t *>(data);
+  for (uint16_t i = 0; i < nmu; ++i, ptr32 += 3) {
+    uint64_t wlo;
+    uint32_t whi;
+    if ((i & 1) == 0) {
+      wlo = *reinterpret_cast<const uint64_t *>(ptr32);
+      whi = *(ptr32 + 2);
+    } else {
+      wlo = *reinterpret_cast<const uint64_t *>(ptr32 + 1);
+      whi = *ptr32;
+    }
+    pt[i] = extractBitsFromW<1, 16>(wlo) * 0.03125f;
+    phi[i] = extractSignedBitsFromW<17, 13>(wlo) * float(M_PI / (1 << 12));
+    eta[i] = extractSignedBitsFromW<30, 14>(wlo) * float(M_PI / (1 << 12));
+    z0[i] = extractSignedBitsFromW<44, 10>(wlo) * 0.05f;
+    d0[i] = extractSignedBitsFromW<54, 10>(wlo) * 0.03f;
+    charge[i] = (whi & 1) ? -1 : +1;
+    quality[i] = extractBitsFromW<1, 8>(whi);
+    isolation[i] = extractBitsFromW<9, 4>(whi);
+    beta[i] = extractBitsFromW<13, 4>(whi) * 0.06f;
   }
 }
 
-inline void report(double treal, int entries, float insize, float outsize) {
-  float inrate = insize / (1024. * 1024.) / treal;
+inline void printReport(const UnpackerBase::Report &rep) {
+  float inrate = rep.bytes_in / (1024. * 1024.) / rep.time;
   printf(
       "Done in %.2fs. Event rate: %.1f kHz (40 MHz / %.1f), input data rate %.1f MB/s (%.1f "
       "Gbps)\n",
-      treal,
-      entries / treal / 1000.,
-      (40e6 * treal / entries),
+      rep.time,
+      rep.entries / rep.time / 1000.,
+      (40e6 * rep.time / rep.entries),
       inrate,
       inrate * 8 / 1024.);
-  if (outsize) {
-    float outrate = outsize / (1024. * 1024.) / treal;
-    float ratio = outsize / insize;
+  if (rep.bytes_out) {
+    float outrate = rep.bytes_out / (1024. * 1024.) / rep.time;
+    float ratio = rep.bytes_out / rep.bytes_in;
     printf(
-        "Input file size: %.2f MB, Output file size: %.2f MB, File size ratio: %.3f, output data rate %.1f MB/s (%.1f "
+        "Input file size: %.2f MB, Output file size: %.2f MB, File size ratio: %.3f, output data rate %.1f MB/s "
+        "(%.1f "
         "Gbps)\n\n",
-        insize / (1024. * 1024.),
-        outsize / (1024. * 1024.),
+        rep.bytes_in / (1024. * 1024.),
+        rep.bytes_out / (1024. * 1024.),
         ratio,
         outrate,
         outrate * 8 / 1024);
@@ -429,19 +444,10 @@ inline void report(double treal, int entries, float insize, float outsize) {
   }
 }
 
-inline void report(double tcpu, double treal, int entries, const char *infile, const char *outfile) {
-  struct stat stat_buf;
-  int rc = stat(infile, &stat_buf);
-  float insize = ((rc == 0) ? stat_buf.st_size : 0), outsize = 0;
-  if (outfile) {
-    rc = stat(outfile, &stat_buf);
-    outsize = ((rc == 0) ? stat_buf.st_size : 0);
-  }
-  report(tcpu, treal, entries, insize, outsize);
-}
-
-inline void report(
-    double tcpu, double treal, int entries, const std::vector<std::string> &infiles, const std::string &outfile) {
+inline UnpackerBase::Report makeReport(float treal,
+                                       unsigned long int entries,
+                                       const std::vector<std::string> &infiles,
+                                       const std::string &outfile) {
   float insize = 0, outsize = 0;
   struct stat stat_buf;
   for (auto &infile : infiles) {
@@ -452,20 +458,6 @@ inline void report(
     int rc = stat(outfile.c_str(), &stat_buf);
     outsize = ((rc == 0) ? stat_buf.st_size : 0);
   }
-  report(tcpu, treal, entries, insize, outsize);
-}
-
-inline void report(double treal, int entries, const std::vector<std::string> &infiles, const std::string &outfile) {
-  float insize = 0, outsize = 0;
-  struct stat stat_buf;
-  for (auto &infile : infiles) {
-    int rc = stat(infile.c_str(), &stat_buf);
-    insize += ((rc == 0) ? stat_buf.st_size : 0);
-  };
-  if (!outfile.empty()) {
-    int rc = stat(outfile.c_str(), &stat_buf);
-    outsize = ((rc == 0) ? stat_buf.st_size : 0);
-  }
-  report(treal, entries, insize, outsize);
+  return UnpackerBase::Report(entries, treal, insize, outsize);
 }
 #endif

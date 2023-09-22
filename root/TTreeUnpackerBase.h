@@ -1,17 +1,18 @@
 #ifndef p2_clients_TTreeUnpackerBase_h
 #define p2_clients_TTreeUnpackerBase_h
+#include <chrono>
 #include <TROOT.h>
 #include <TTree.h>
 #include <TFile.h>
 #include "../UnpackerBase.h"
-#include "unpack.h"
+#include "../unpack.h"
 
 class TTreeUnpackerBase : public UnpackerBase {
 public:
   TTreeUnpackerBase() : compressionAlgo_(ROOT::RCompressionSetting::EAlgorithm::kZLIB), compressionLevel_(0) {}
   ~TTreeUnpackerBase() override {}
 
-  unsigned long int unpack(const std::vector<std::string> &ins, const std::string &out) const override = 0;
+  Report unpack(const std::vector<std::string> &ins, const std::string &out) const override = 0;
   void setThreads(unsigned int threads) override;
   void setCompression(const std::string &algo, unsigned int level) override;
 
@@ -19,8 +20,8 @@ protected:
   int compressionAlgo_, compressionLevel_;
 
   template <typename T, typename B, typename D>
-  unsigned long int unpackBase(
-      const std::vector<std::string> &ins, const std::string &out, T &data, B book, D decode) const {
+  Report unpackBase(const std::vector<std::string> &ins, const std::string &out, T &data, B book, D decode) const {
+    auto tstart = std::chrono::steady_clock::now();
     std::vector<std::fstream> fins;
     for (auto &in : ins) {
       fins.emplace_back(in, std::ios_base::in | std::ios_base::binary);
@@ -74,7 +75,8 @@ protected:
       tree->Write();
       fout->Close();
     }
-    return entries;
+    double dt = (std::chrono::duration<double>(std::chrono::steady_clock::now() - tstart)).count();
+    return makeReport(dt, entries, ins, out);
   }
 };
 

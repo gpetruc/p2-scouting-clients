@@ -86,7 +86,7 @@ Useful *options* are:
 
 The even generator reads some events in `Native64` format, and resamples them in order to generate a stream of data.
 ```
-./data_generator.exe [options] Mode root/data/SingleNeutrino.dump Destination
+./data_generator.exe [options] Mode root/data/Puppi.dump Destination
 ```
 
 Supported *modes* at the moment are just  `Native64` and `DTHBasic256`
@@ -110,7 +110,7 @@ mkfifo /run/user/$UID/tmpfifo.1
 ```
 in a second shell do
 ```bash
-./data_generator.exe DTHBasic256 root/data/SingleNeutrino.dump  /run/user/$UID/tmpfifo.%d --orbits 10000 -n 2
+./data_generator.exe DTHBasic256 root/data/Puppi.dump  /run/user/$UID/tmpfifo.%d --orbits 10000 -n 2
 ```
 
 TCP/IP can also be used, but FIFOs are faster.

@@ -7,7 +7,7 @@ public:
   RNTupleUnpackerCollFloat() {}
   ~RNTupleUnpackerCollFloat() override {}
 
-  unsigned long int unpack(const std::vector<std::string> &ins, const std::string &out) const override;
+  Report unpack(const std::vector<std::string> &ins, const std::string &out) const override;
 
 protected:
   struct Data {
