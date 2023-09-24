@@ -29,6 +29,8 @@
 #include <algorithm>
 #include <getopt.h>
 
+#include <sys/uio.h>
+
 typedef std::chrono::time_point<std::chrono::steady_clock> tp;
 
 class ResamplerData {
@@ -126,12 +128,22 @@ public:
                   unsigned int orbitSize = 2 * 1024 * 1024)
       : GeneratorBase(data, tmux, offs, seed), orbSize_(orbitSize), sync_(sync) {}
   void generate(int fd, unsigned int norbits, unsigned int orbitmux) override final {
+    constexpr unsigned int packetSize = 256 * 256 / 8; // max DTH256 packet size is 256 rows of 256 bits
+    unsigned int maxPackets = std::ceil(float(orbSize_)/packetSize);
+    std::vector<struct iovec> iovecs(2*maxPackets);
+    std::vector<std::array<uint8_t,32>> headers(maxPackets);
+    for (unsigned int i = 0; i < maxPackets; ++i) {
+      auto & header = headers[i];
+      std::fill(header.begin(), header.end(), 0);
+      header[0] = 0x47;
+      header[1] = 0x5a;
+      iovecs[2*i].iov_base = reinterpret_cast<void *>(&headers[i].front());
+      iovecs[2*i].iov_len  = 32;
+    }
+
     uint64_t *orbit_buff = reinterpret_cast<uint64_t *>(std::aligned_alloc(4096u, orbSize_));
     uint64_t *end_buff = orbit_buff + (orbSize_ / sizeof(uint64_t));
-    uint8_t header[32];  // 256 bits
-    std::fill(header, header + 32, 0);
-    header[0] = 0x47;
-    header[1] = 0x5a;
+
     double orbitTime = 3564 / 40e6;
     auto tstart = std::chrono::steady_clock::now();
     for (unsigned int i = 1; i <= norbits; i += orbitmux) {
@@ -141,15 +153,19 @@ public:
       // add 3 null words for safety
       for (int w = 0; w < 3; ++w)
         orbit_buff[nwords + w] = 0;
-      for (int n256 = (nwords + 3) >> 2; n256 > 0; n256 -= 255) {
+      unsigned int ipacket = 0;
+      for (int n256 = (nwords + 3) >> 2; n256 > 0; n256 -= 255, ++ipacket) {
         unsigned int chunksize256 = std::min<int>(n256, 255);
+        auto & header = headers[ipacket];
+        auto & iov_data = iovecs[2*ipacket+1];
         header[6] = chunksize256;
         header[5] = (first ? (1 << 7) : 0) | (n256 <= 255 ? (1 << 6) : 0);
-        write(fd, header, 32);
-        write(fd, ptr, (chunksize256 << 2) * sizeof(uint64_t));
+        iov_data.iov_base = ptr;
+        iov_data.iov_len = (chunksize256 << 2) * sizeof(uint64_t);
         ptr += (chunksize256 << 2);
         first = false;
       }
+      writev(fd, &iovecs.front(), 2*ipacket);
       if (sync_) {
         auto tend = std::chrono::steady_clock::now();
         double dt = (std::chrono::duration<double>(tend - tstart)).count();
