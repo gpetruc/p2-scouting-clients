@@ -732,14 +732,8 @@ public:
       : CheckerBase(), orbSize_(orbSize_kb * 1024), checkData_(checkData), trailZeros_(trailZeros) {}
   ~DTHBasicChecker256() override{};
 
-  bool readChunk(std::fstream &in, uint8_t *&ptr, unsigned size256) {
-    in.read(reinterpret_cast<char *>(ptr), size256 << 5);
-    ptr += (size256 << 5);
-    return (in.gcount() != 0);
-  }
-
-  bool readChunk(int sockfd, uint8_t *&ptr, unsigned size256) {
-    size_t toread = size256 << 5;
+  bool readChunk(int sockfd, uint8_t *&ptr, unsigned size256, bool plusOne) {
+    size_t toread = (plusOne ? size256 + 1 : size256) << 5;
     while (toread > 0) {
       int n = read(sockfd, reinterpret_cast<char *>(ptr), toread);
       if (n <= 0)
@@ -747,6 +741,8 @@ public:
       toread -= n;
       ptr += n;
     }
+    if (plusOne)
+      ptr -= 32;
     return true;
   }
 
@@ -770,14 +766,14 @@ public:
         uint32_t totlen256 = dthh.size256;
         assert(ptr + (dthh.size256 << 5) < end);
         try {
-          dthh.ok = readChunk(in, ptr, dthh.size256);
+          dthh.ok = readChunk(in, ptr, dthh.size256, !dthh.end);
           while (dthh.ok && !dthh.end) {
-            dthh = readDTH256(in, buff256, false, false);
+            dthh = parseDTH256(dthh.ok, ptr, false, false);
             if (!dthh.ok)
               break;
             totlen256 += dthh.size256;
             assert(ptr + (dthh.size256 << 5) < end);
-            dthh.ok = readChunk(in, ptr, dthh.size256);
+            dthh.ok = readChunk(in, ptr, dthh.size256, !dthh.end);
           }
         } catch (const std::exception &e) {
           printf("%02u: Exception was raised in reading DTH frame:\n%s\n", id_, e.what());
@@ -910,14 +906,14 @@ public:
         uint32_t totlen256 = dthh.size256;
         assert(ptr + (dthh.size256 << 5) < end);
         try {
-          dthh.ok = readChunk(in, ptr, dthh.size256);
+          dthh.ok = readChunk(in, ptr, dthh.size256, !dthh.end);
           while (dthh.ok && !dthh.end) {
-            dthh = readDTH256(in, buff256, false, false);
+            dthh = parseDTH256(dthh.ok, ptr, false, false);
             if (!dthh.ok)
               break;
             totlen256 += dthh.size256;
             assert(ptr + (dthh.size256 << 5) < end);
-            dthh.ok = readChunk(in, ptr, dthh.size256);
+            dthh.ok = readChunk(in, ptr, dthh.size256, !dthh.end);
           }
         } catch (const std::exception &e) {
           printf("%02u: Exception was raised in reading DTH frame:\n%s\n", id_, e.what());
@@ -1054,14 +1050,14 @@ public:
         uint32_t totlen256 = dthh.size256;
         assert(ptr + (dthh.size256 << 5) < end);
         try {
-          dthh.ok = readChunk(in, ptr, dthh.size256);
+          dthh.ok = readChunk(in, ptr, dthh.size256, !dthh.end);
           while (dthh.ok && !dthh.end) {
-            dthh = readDTH256(in, buff256, false, false);
+            dthh = parseDTH256(dthh.ok, ptr, false, false);
             if (!dthh.ok)
               break;
             totlen256 += dthh.size256;
             assert(ptr + (dthh.size256 << 5) < end);
-            dthh.ok = readChunk(in, ptr, dthh.size256);
+            dthh.ok = readChunk(in, ptr, dthh.size256, !dthh.end);
           }
         } catch (const std::exception &e) {
           printf("%02u: Exception was raised in reading DTH frame:\n%s\n", id_, e.what());
@@ -1370,7 +1366,7 @@ int main(int argc, char **argv) {
                                            {nullptr, 0, nullptr, 0}};
     /* getopt_long stores the option index here. */
     int option_index = 0;
-    int optc = getopt_long(argc, argv, "khd:T:t:b:O:n:p:z", long_options, &option_index);
+    int optc = getopt_long(argc, argv, "khd:T:t:B:O:n:p:z", long_options, &option_index);
 
     /* Detect the end of the options. */
     if (optc == -1)
