@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
+#include <atomic>
 #include <filesystem>
 #include <errno.h>
 #include <unistd.h>
@@ -21,13 +22,54 @@ void usage() {
   //printf("  -n N : wait for N files and analyze them together\n");
 }
 
+struct Totals {
+  std::chrono::time_point<std::chrono::steady_clock> tstart;
+  std::atomic<unsigned> jobs;
+  std::atomic<unsigned long long> events, kb_in, kb_out;
+  Totals() : jobs(0), events(0), kb_in(0), kb_out(0) {}
+  void maybe_start() {
+    if (jobs.load() == 0)
+      tstart = std::chrono::steady_clock::now();
+  }
+  void add(const rdfAnalysis::Report &r, bool print = true) {
+    jobs.fetch_add(1);
+    events.fetch_add(r.entries);
+    kb_in.fetch_add(std::round(r.bytes_in / 1024));
+    kb_out.fetch_add(std::round(r.bytes_out / 1024));
+    if (print) {
+      auto tend = std::chrono::steady_clock::now();
+      auto dt = (std::chrono::duration<double>(tend - tstart)).count();
+      double GB_in = kb_in.load() / 1024.0 / 1024.0;
+      double GB_out = kb_out.load() / 1024.0 / 1024.0;
+      if (GB_out) {
+        printf("Tot of %.1fs, %u jobs, %llu events, %.3f GB in (%.1f GB/s), %.3f GB out (%.1f GB/s)\n",
+               dt,
+               jobs.load(),
+               events.load(),
+               GB_in,
+               GB_in / dt,
+               GB_out,
+               GB_out / dt);
+      } else {
+        printf("Tot of %.1fs, %u jobs, %llu events, %.3f GB in (%.1f GB/s)\n",
+               dt,
+               jobs.load(),
+               events.load(),
+               GB_in,
+               GB_in / dt);
+      }
+    }
+  }
+};
+
 class Executor {
 public:
   Executor(const rdfAnalysis &analysis,
            const std::string &inFormat,
            const std::string &outFormat,
-           const std::string &outPath)
-      : analysis_(&analysis), inFormat_(inFormat), outFormat_(outFormat), outPath_(outPath) {}
+           const std::string &outPath,
+           Totals & totals)
+      : analysis_(&analysis), inFormat_(inFormat), outFormat_(outFormat), outPath_(outPath), totals_(&totals) {}
   void operator()(std::vector<std::string> inputs) const {
     if (inputs.empty())
       return;
@@ -44,7 +86,31 @@ public:
         }
       }
     }
-    analysis_->run(inFormat_, inputs, outFormat_, output);
+    auto report = analysis_->run(inFormat_, inputs, outFormat_, output);
+    if (output.empty()) {
+      printf(
+          "Run on %lu events in %.3f s (%.1f kHz, 40 MHz / %.1f); "
+          "Size %.1f GB; Rate %.1f Gbps.\n",
+          report.entries,
+          report.time,
+          report.entries * .001 / report.time,
+          40e6 * report.time / report.entries,
+          report.bytes_in / (1024. * 1024. * 1024.),
+          report.bytes_in / (1024. * 1024. * 1024.) * 8 / report.time);
+    } else {
+      printf(
+          "Run on %lu events in %.3f s (%.1f kHz, 40 MHz / %.1f); "
+          "Size %.1f GB in, %.3f GB out; Rate %.1f Gbps in, %.2f Gbps out.\n",
+          report.entries,
+          report.time,
+          report.entries * .001 / report.time,
+          40e6 * report.time / report.entries,
+          report.bytes_in / (1024. * 1024. * 1024.),
+          report.bytes_out / (1024. * 1024. * 1024.),
+          report.bytes_in / (1024. * 1024. * 1024.) * 8 / report.time,
+          report.bytes_out / (1024. * 1024. * 1024.) * 8 / report.time);
+    }
+    totals_->add(report);
     for (const auto &in : inputs)
       std::filesystem::remove(in);
     if (output.length() > 9 && output.substr(output.length() - 9) == ".tmp.root") {
@@ -57,11 +123,12 @@ public:
 private:
   const rdfAnalysis *analysis_;
   const std::string inFormat_, outFormat_, outPath_;
+  mutable Totals *totals_;
 };
 
 class Source {
 public:
-  Source(const std::string &from, int inotify_fd) : from_(from), inotify_fd_(inotify_fd) {}
+  Source(const std::string &from, int inotify_fd, Totals & totals) : from_(from), inotify_fd_(inotify_fd), totals_(&totals) {}
 
   std::vector<std::string> operator()(tbb::flow_control &fc) const {
     std::vector<std::string> ret;
@@ -74,6 +141,7 @@ public:
       ret = workQueue_.front();
       workQueue_.pop_front();
     }
+    totals_->maybe_start();
     return ret;
   }
 
@@ -82,6 +150,7 @@ private:
   static const unsigned int BUF_LEN = 1024 * (EVENT_SIZE + 16);
   const std::string from_, to_, ext_;
   const int inotify_fd_;
+  mutable Totals *totals_;
 
   mutable std::deque<std::vector<std::string>> workQueue_;
   bool readMessages() const {
@@ -150,11 +219,11 @@ int tbbLiveAnalysis(unsigned int threads,
   printf("Watching %s for new files\n", from.c_str());
 
   ROOT::EnableThreadSafety();
-
-  auto head = tbb::make_filter<void, std::vector<std::string>>(tbb::filter::serial_in_order, Source(from, fd));
+  Totals totals;
+  auto head = tbb::make_filter<void, std::vector<std::string>>(tbb::filter::serial_in_order, Source(from, fd, totals));
   auto queue = head & tbb::make_filter<std::vector<std::string>, void>(
                           (threads == 0 ? tbb::filter::serial_in_order : tbb::filter::parallel),
-                          Executor(analysis, inFormat, outFormat, to));
+                          Executor(analysis, inFormat, outFormat, to, totals));
   tbb::parallel_pipeline(std::max(1u, threads), queue);
 
   inotify_rm_watch(fd, wd);

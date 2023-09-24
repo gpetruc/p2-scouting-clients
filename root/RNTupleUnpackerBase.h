@@ -69,8 +69,10 @@ protected:
       entries++;
     }
     // close
-    if (writer)
+    if (writer) {
+      writer->CommitCluster();
       writer.reset();
+    }
     double dt = (std::chrono::duration<double>(std::chrono::steady_clock::now() - tstart)).count();
     return makeReport(dt, entries, ins, out);
   }

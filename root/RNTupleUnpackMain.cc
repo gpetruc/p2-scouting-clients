@@ -113,6 +113,7 @@ int main(int argc, char **argv) {
       return 1;
     }
     unpacker->setCompression(compressionMethod, compressionLevel);
+    ROOT::EnableThreadSafety();
     if (threads != -1)
       unpacker->setThreads(threads);
     auto report = unpacker->unpack(ins, output);

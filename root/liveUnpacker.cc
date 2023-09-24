@@ -109,17 +109,48 @@ struct Token {
   std::string output;
 };
 
+struct Totals {
+  std::chrono::time_point<std::chrono::steady_clock> tstart;
+  std::atomic<unsigned> jobs;
+  std::atomic<unsigned long long> events, kb_in, kb_out;
+  Totals() : jobs(0), events(0), kb_in(0), kb_out(0) {}
+  void maybe_start() {
+    if (jobs.load() == 0)
+      tstart = std::chrono::steady_clock::now();
+  }
+  void add(const UnpackerBase::Report &r, bool print = true) {
+    jobs.fetch_add(1);
+    events.fetch_add(r.entries);
+    kb_in.fetch_add(std::round(r.bytes_in / 1024));
+    kb_out.fetch_add(std::round(r.bytes_out / 1024));
+    if (print) {
+      auto tend = std::chrono::steady_clock::now();
+      auto dt = (std::chrono::duration<double>(tend - tstart)).count();
+      double GB_in = kb_in.load() / 1024.0 / 1024.0;
+      double GB_out = kb_out.load() / 1024.0 / 1024.0;
+      printf("Tot of %.1fs, %u jobs, %llu events, %.3f GB in (%.1f GB/s), %.3f GB out (%.1f GB/s)\n",
+             dt,
+             jobs.load(),
+             events.load(),
+             GB_in,
+             GB_in / dt,
+             GB_out,
+             GB_out / dt);
+    }
+  }
+};
+
 class Executor {
 public:
-  Executor(const UnpackerBase &unpacker, bool deleteAfterwards)
-      : unpacker_(&unpacker), deleteAfterwards_(deleteAfterwards) {}
-  Executor(const Executor &other) : unpacker_(other.unpacker_), deleteAfterwards_(other.deleteAfterwards_) {}
+  Executor(const UnpackerBase &unpacker, Totals &totals, bool deleteAfterwards)
+      : unpacker_(&unpacker), totals_(&totals), deleteAfterwards_(deleteAfterwards) {}
   void operator()(Token token) const {
     if (token.inputs.empty())
       return;
     printf("Unpack %s[#%d] -> %s\n", token.inputs.front().c_str(), int(token.inputs.size()), token.output.c_str());
     auto report = unpacker_->unpack(token.inputs, token.output);
     printReport(report);
+    totals_->add(report);
     for (const auto &in : token.inputs)
       unlink(in.c_str());
     if (deleteAfterwards_)
@@ -130,13 +161,14 @@ public:
 
 private:
   const UnpackerBase *unpacker_;
+  mutable Totals *totals_;
   const bool deleteAfterwards_;
 };
 
 class Source {
 public:
-  Source(const std::string &from, const std::string &to, unsigned int timeslices, int inotify_fd)
-      : from_(from), to_(to), inotify_fd_(inotify_fd), timeslices_(timeslices) {}
+  Source(const std::string &from, const std::string &to, unsigned int timeslices, int inotify_fd, Totals &totals)
+      : from_(from), to_(to), inotify_fd_(inotify_fd), timeslices_(timeslices), totals_(&totals) {}
 
   Token operator()(bool &stop) const {
     Token ret;
@@ -149,6 +181,7 @@ public:
       ret = workQueue_.front();
       workQueue_.pop_front();
     }
+    totals_->maybe_start();
     return ret;
   }
   Token operator()(tbb::flow_control &fc) const {
@@ -165,6 +198,7 @@ private:
   const std::string from_, to_;
   const int inotify_fd_;
   unsigned int timeslices_;
+  mutable Totals *totals_;
 
   static bool parseUnpackedFilename(const std::string &fname, unsigned int &orbit, unsigned int &ts, std::string &fout) {
     // in the form raw.ts00.orb00056001.dump  | tsXX.orbXXXXX.dump
@@ -320,8 +354,9 @@ int singleCoreLiveUnpacker(const UnpackerBase &unpacker,
     return -1;
   }
 
-  auto src = Source(from, to, timeslices, fdwd.first);
-  auto dest = Executor(unpacker, deleteAfterwards);
+  Totals totals;
+  auto src = Source(from, to, timeslices, fdwd.first, totals);
+  auto dest = Executor(unpacker, totals, deleteAfterwards);
   bool stop = false;
   while (!stop) {
     dest(src(stop));
@@ -346,9 +381,11 @@ int tbbLiveUnpacker(unsigned int threads,
 
   ROOT::EnableThreadSafety();
 
-  auto head = tbb::make_filter<void, Token>(tbb::filter::serial_in_order, Source(from, to, timeslices, fdwd.first));
+  Totals totals;
+  auto head =
+      tbb::make_filter<void, Token>(tbb::filter::serial_in_order, Source(from, to, timeslices, fdwd.first, totals));
   auto tail = tbb::make_filter<Token, void>((threads == 0 ? tbb::filter::serial_in_order : tbb::filter::parallel),
-                                            Executor(unpacker, deleteAfterwards));
+                                            Executor(unpacker, totals, deleteAfterwards));
   tbb::parallel_pipeline(std::max(1u, threads), head & tail);
 
   inotify_rm_watch(fdwd.first, fdwd.second);
