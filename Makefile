@@ -68,9 +68,9 @@ libunpackerBase.so: UnpackerBase.o
 %.exe : %.cc
 	$(CC) $(CCFLAGS) $(LIBS) $< -o $@
 
-#receive256tbb.exe : receive256tbb.cc
-#	$(CC) $(CCFLAGS) $(LIBS) $< -o $@ -I$(TBB)/include -L$(TBB)/lib -ltbb
-# 
+receive256tbb.exe : receive256tbb.cc
+	$(CC) $(CCFLAGS) $(LIBS) $< -o $@ -I$(TBB)/include -L$(TBB)/lib -ltbb
+ 
 format:
 	clang-format -i data_checker.cc data_generator.cc unpack.h UnpackerBase.h
 	@cd apache && $(MAKE) format
