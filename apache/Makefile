@@ -2,8 +2,11 @@ CC = c++
 CCFLAGS = -ggdb --std=c++17 -W -Wall -Wno-unused-variable -Ofast -march=native -Wno-unused-result
 LIBS = -L/cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/lib64 -lstdc++ -larrow 
 DATAFILE ?= ../root/data/Puppi.dump
+TKMUDATAFILE ?= ../root/data/TkMuons_TM18.dump
 
 .PHONY: clean env format run_test_unpack run_test_speed run_test_comp
+
+all: arrow_read.exe apacheUnpacker.exe
 
 BASE_INC := ../unpack.h  ../UnpackerBase.h
 BASE_LIB := ../libunpackerBase.so
@@ -25,8 +28,6 @@ libapacheUnpacker.so: ApacheUnpackMaker.o $(IPC_UNPACKER_OBJ) $(BASE_LIB)
 apacheUnpacker.exe: ApacheUnpackMain.cc libapacheUnpacker.so
 	$(CC) $(CCFLAGS) $(LIBS) $^ -L.. -L. -lunpackerBase -lapacheUnpacker -o $@
 
-all: arrow_read.exe apacheUnpacker.exe
-
 arrow_read.exe : arrow_read.cc
 	$(CC) $(CCFLAGS) $(LIBS) $< -o $@
 
@@ -40,6 +41,9 @@ run_tests: apacheUnpacker.exe arrow_read.exe
 	@for T in float float16 int raw64 ; do  \
 		./apacheUnpacker.exe puppi ipc $$T ../root/data/Puppi.dump puppi.ipc.$${T}.arrow; \
 	done
+	@for T in float float16 ; do  \
+		./apacheUnpacker.exe tkmu ipc $$T ../root/data/TkMuons_TM18.dump tkmu.ipc.$${T}.arrow; \
+	done
 	@for T in float float16 int raw64 ; do  \
 		./arrow_read.exe ipc  puppi.ipc.$${T}.arrow | head -n 15; echo; \
 	done
@@ -50,11 +54,13 @@ run_test_speed: apacheUnpacker.exe
 	@./apacheUnpacker.exe puppi ipc float16 $(DATAFILE)
 	@./apacheUnpacker.exe puppi ipc int $(DATAFILE) 
 	@./apacheUnpacker.exe puppi ipc raw64 $(DATAFILE) 
+	@./apacheUnpacker.exe tkmu ipc float $(TKMUDATAFILE)
 	@echo "==== With output ===="
 	@./apacheUnpacker.exe puppi ipc float $(DATAFILE) /run/user/$$UID/out.arrow
 	@./apacheUnpacker.exe puppi ipc float16 $(DATAFILE) /run/user/$$UID/out.arrow
 	@./apacheUnpacker.exe puppi ipc int $(DATAFILE) /run/user/$$UID/out.arrow
 	@./apacheUnpacker.exe puppi ipc raw64 $(DATAFILE) /run/user/$$UID/out.arrow
+	@./apacheUnpacker.exe tkmu ipc float $(TKMUDATAFILE) /run/user/$$UID/out.arrow
 
 run_test_comp: apacheUnpacker.exe
 	@echo "==== With compressed output ===="

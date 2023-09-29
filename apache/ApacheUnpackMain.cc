@@ -7,9 +7,10 @@
 
 void usage() {
   printf("Usage: rootUnpacker.exe [ options ] <obj> <kind> <format> infile.dump [infile2.dump ...] [ outfile.root ]\n");
-  printf("  obj  := puppi \n");
+  printf("  obj  := puppi | tkmu \n");
   printf("  kind := ipc\n");
   printf("  puppi ipc  formats   := float | float16 | int | raw64\n");
+  printf("  tkmu  ipc  formats   := float | float16\n");
   printf("Options: \n");
   printf("  -j, --cputhreads N: set the capacity of the global CPU thread pool\n");
   printf("  -J, --iothreads  N: set the capacity of the global I/O thread pool\n");

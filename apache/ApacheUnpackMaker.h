@@ -5,7 +5,7 @@
 
 namespace ApacheUnpackMaker {
   struct Spec {
-    enum class ObjType { Puppi };
+    enum class ObjType { Puppi, TkMu };
     enum class FileKind { IPC };
     ObjType objType;
     FileKind fileKind;
