@@ -2,55 +2,19 @@
 #include <chrono>
 #include "../unpack.h"
 
-UnpackerBase::Report RNTupleUnpackerRaw64::unpack(const std::vector<std::string> &ins, const std::string &out) const {
-  auto tstart = std::chrono::steady_clock::now();
-  std::vector<std::fstream> fins;
-  for (auto &in : ins) {
-    fins.emplace_back(in, std::ios_base::in | std::ios_base::binary);
-    if (!fins.back().good()) {
-      throw std::runtime_error("Error opening " + in + " for otput");
-    }
-  }
+void RNTupleUnpackerRaw64::bookOutput(const std::string &out) {
+  auto model = modelBase();
+  p_data = model->MakeField<ROOT::RVec<uint64_t>>("Puppi_packed");
+  bookBase(out, std::move(model));
+}
 
-  auto model = ROOT::Experimental::RNTupleModel::Create();
-  auto p_run = model->MakeField<uint16_t>("run");
-  auto p_orbit = model->MakeField<uint32_t>("orbit");
-  auto p_bx = model->MakeField<uint16_t>("bx");
-  auto p_good = model->MakeField<bool>("good");
-  auto p_puppi = model->MakeField<std::vector<uint64_t>>("Puppi_packed");
-
-  std::unique_ptr<ROOT::Experimental::RNTupleWriter> writer;
-  if (!out.empty()) {
-    ROOT::Experimental::RNTupleWriteOptions options;
-    options.SetCompression(compression_);
-    writer = ROOT::Experimental::RNTupleWriter::Recreate(std::move(model), "Events", out.c_str(), options);
-  }
-
-  uint16_t npuppi;
-  uint64_t header;
-
-  // loop
-  unsigned long int entries = 0;
-  for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
-    std::fstream &fin = fins[ifile];
-    do {
-      fin.read(reinterpret_cast<char *>(&header), sizeof(uint64_t));
-    } while (header == 0 && fin.good());
-    if (!header)
-      continue;
-    parseHeader(header, *p_run, *p_bx, *p_orbit, *p_good, npuppi);
-    p_puppi->resize(npuppi);
-    if (npuppi) {
-      fin.read(reinterpret_cast<char *>(&p_puppi->front()), npuppi * sizeof(uint64_t));
-    }
-    if (writer) {
-      writer->Fill();
-    }
-    entries++;
-  }
-  // close
-  if (writer)
-    writer.reset();
-  double dt = (std::chrono::duration<double>(std::chrono::steady_clock::now() - tstart)).count();
-  return makeReport(dt, entries, ins, out);
+void RNTupleUnpackerRaw64::fillEvent(
+    uint16_t run, uint32_t orbit, uint16_t bx, bool good, uint16_t nwords, const uint64_t *words) {
+  *dataBase_.p_run = run;
+  *dataBase_.p_orbit = orbit;
+  *dataBase_.p_bx = bx;
+  *dataBase_.p_good = good;
+  *p_data = ROOT::RVec<uint64_t>(const_cast<uint64_t *>(words), nwords);
+  if (writer_)
+    writer_->Fill();
 }

@@ -9,15 +9,28 @@
 
 class TTreeUnpackerBase : public UnpackerBase {
 public:
-  TTreeUnpackerBase() : compressionAlgo_(ROOT::RCompressionSetting::EAlgorithm::kZLIB), compressionLevel_(0) {}
+  TTreeUnpackerBase()
+      : compressionAlgo_(ROOT::RCompressionSetting::EAlgorithm::kZLIB),
+        compressionLevel_(0),
+        fout_(),
+        file_(nullptr),
+        tree_(nullptr) {}
   ~TTreeUnpackerBase() override {}
 
-  Report unpack(const std::vector<std::string> &ins, const std::string &out) const override = 0;
   void setThreads(unsigned int threads) override;
   void setCompression(const std::string &algo, unsigned int level) override;
 
+  void bookOutputBase(const std::string &out);
+  unsigned long int closeOutput() override;
+
 protected:
   int compressionAlgo_, compressionLevel_;
+  std::string fout_;
+  TFile *file_;
+  TTree *tree_;
+  uint16_t run_, bx_, npuppi_;
+  uint32_t orbit_;
+  Bool_t good_;
 
   template <typename T, typename B, typename D>
   Report unpackBase(const std::vector<std::string> &ins, const std::string &out, T &data, B book, D decode) const {

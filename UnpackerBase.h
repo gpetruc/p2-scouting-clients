@@ -24,9 +24,18 @@ public:
   };
   UnpackerBase() {}
   virtual ~UnpackerBase() {}
-  virtual Report unpack(const std::vector<std::string> &ins, const std::string &out) const = 0;
+  virtual Report unpackFiles(const std::vector<std::string> &ins, const std::string &out);
+  unsigned long int unpackOrbits(const std::vector<std::pair<const uint64_t *, const uint64_t *>> &buffers);
   virtual void setThreads(unsigned int threads) = 0;
   virtual void setCompression(const std::string &algo, unsigned int level) = 0;
+  virtual void bookOutput(const std::string & /*out*/) {}
+  virtual unsigned long int closeOutput() { return 0; }
+  virtual void fillEvent(uint16_t /*run*/,
+                         uint32_t /*orbit*/,
+                         uint16_t /*bx*/,
+                         bool /*good*/,
+                         uint16_t /*nwords*/,
+                         const uint64_t * /*words*/) {}
 };
 
 #endif

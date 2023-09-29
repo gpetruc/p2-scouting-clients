@@ -2,34 +2,39 @@
 #include <TTree.h>
 #include "../unpack.h"
 
-UnpackerBase::Report TTreeUnpackerInts::unpack(const std::vector<std::string> &ins, const std::string &out) const {
-  Data data;
-  auto book = [=](TTree *tree, uint16_t &npuppi, uint64_t /*header*/, uint64_t /*payload*/[255], Data &d) {
-    tree->Branch("nPuppi", &npuppi, "nPuppi/s");
-    tree->Branch("Puppi_pt", &d.pt, "Puppi_pt[nPuppi]/s");
-    tree->Branch("Puppi_eta", &d.eta, "Puppi_eta[nPuppi]/S");
-    tree->Branch("Puppi_phi", &d.phi, "Puppi_phi[nPuppi]/S");
-    tree->Branch("Puppi_pid", &d.pid, "Puppi_pid[nPuppi]/b");
-    tree->Branch("Puppi_z0", &d.z0, "Puppi_z0[nPuppi]/S");
-    tree->Branch("Puppi_dxy", &d.dxy, "Puppi_dxy[nPuppi]/B");
-    tree->Branch("Puppi_quality", &d.quality, "Puppi_quality[nPuppi]/b");
-    tree->Branch("Puppi_wpuppi", &d.wpuppi, "Puppi_wpuppi[nPuppi]/s");
-  };
+void TTreeUnpackerInts::bookOutput(const std::string &out) {
+  bookOutputBase(out);
+  if (tree_) {
+    tree_->Branch("Puppi_pt", &data_.pt, "Puppi_pt[nPuppi]/s");
+    tree_->Branch("Puppi_eta", &data_.eta, "Puppi_eta[nPuppi]/S");
+    tree_->Branch("Puppi_phi", &data_.phi, "Puppi_phi[nPuppi]/S");
+    tree_->Branch("Puppi_pid", &data_.pid, "Puppi_pid[nPuppi]/b");
+    tree_->Branch("Puppi_z0", &data_.z0, "Puppi_z0[nPuppi]/S");
+    tree_->Branch("Puppi_dxy", &data_.dxy, "Puppi_dxy[nPuppi]/B");
+    tree_->Branch("Puppi_quality", &data_.quality, "Puppi_quality[nPuppi]/b");
+    tree_->Branch("Puppi_wpuppi", &data_.wpuppi, "Puppi_wpuppi[nPuppi]/s");
+  }
+}
 
-  auto decode = [](uint16_t &npuppi, uint64_t payload[255], Data &d) {
-    for (uint16_t i = 0; i < npuppi; ++i) {
-      readshared(payload[i], d.pt[i], d.eta[i], d.phi[i]);
-      d.pid[i] = (payload[i] >> 37) & 0x7;
-      if (d.pid[i] > 1) {
-        readcharged(payload[i], d.z0[i], d.dxy[i], d.quality[i]);
-        d.wpuppi[i] = 0;
-      } else {
-        readneutral(payload[i], d.wpuppi[i], d.quality[i]);
-        d.z0[i] = 0;
-        d.dxy[i] = 0;
-      }
+void TTreeUnpackerInts::fillEvent(
+    uint16_t run, uint32_t orbit, uint16_t bx, bool good, uint16_t nwords, const uint64_t *words) {
+  run_ = run;
+  orbit_ = orbit;
+  bx_ = bx;
+  good_ = good;
+  npuppi_ = nwords;
+  for (uint16_t i = 0; i < nwords; ++i) {
+    readshared(words[i], data_.pt[i], data_.eta[i], data_.phi[i]);
+    data_.pid[i] = (words[i] >> 37) & 0x7;
+    if (data_.pid[i] > 1) {
+      readcharged(words[i], data_.z0[i], data_.dxy[i], data_.quality[i]);
+      data_.wpuppi[i] = 0;
+    } else {
+      readneutral(words[i], data_.wpuppi[i], data_.quality[i]);
+      data_.z0[i] = 0;
+      data_.dxy[i] = 0;
     }
-  };
-
-  return unpackBase(ins, out, data, book, decode);
+  }
+  if (tree_)
+    tree_->Fill();
 }

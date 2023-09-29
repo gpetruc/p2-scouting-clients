@@ -6,27 +6,24 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/inotify.h>
-#include "TTreeUnpackerFloats.h"
-#include "TTreeUnpackerInts.h"
-#include "TTreeUnpackerRaw64.h"
-#include "RNTupleUnpackerFloats.h"
-#include "RNTupleUnpackerCollFloat.h"
-#include "RNTupleUnpackerInts.h"
-#include "RNTupleUnpackerCollInt.h"
-#include "RNTupleUnpackerRaw64.h"
-#include "GMTTkMuTTreeUnpackerFloats.h"
-#include "GMTTkMuTTreeUnpackerInts.h"
-#include "GMTTkMuRNTupleUnpackerFloats.h"
-#include "GMTTkMuRNTupleUnpackerCollFloat.h"
 #include <getopt.h>
 #include <libgen.h>
 #include <deque>
 #include <tbb/pipeline.h>
+#include <atomic>
+#include <cmath>
+#include <TROOT.h>
+#include <TFile.h>
+#include <ROOT/RLogger.hxx>
+#include <ROOT/RNTuple.hxx>
+#include "RootUnpackMaker.h"
+#include "../unpack.h"
+#include <getopt.h>
 
 void usage() {
   printf("Usage: liveUnpacker.exe [ options ] <obj> <kind> <format> /path/to/input /path/to/outputs \n");
   printf("  obj  := puppi | tkmu \n");
-  printf("  kind := ttree rntuple\n");
+  printf("  kind := ttree | rntuple\n");
   printf("  puppi ttree  formats   := float | float24 | int | raw64\n");
   printf("  puppi rntule formats   := floats | coll_float | ints | coll_int | raw64\n");
   printf("  tkmu  ttree  formats   := float | float24 | int\n");
@@ -38,66 +35,6 @@ void usage() {
   printf("                    algorithms supported are none, lzma, zlib, lz4, zstd;\n");
   printf("                    default level is 4\n");
   printf("  --delete        : delete unpacked output (for benchmarking without filling disks)\n");
-}
-
-std::unique_ptr<UnpackerBase> makeUnpacker(const std::string &obj,
-                                           const std::string &kind,
-                                           const std::string &format,
-                                           const std::string &compressionMethod,
-                                           int compressionLevel) {
-  std::unique_ptr<UnpackerBase> unpacker;
-  if (obj == "puppi") {
-    if (kind == "ttree") {
-      if (format == "float" || format == "float24") {
-        unpacker = std::make_unique<TTreeUnpackerFloats>(format);
-      } else if (format == "int") {
-        unpacker = std::make_unique<TTreeUnpackerInts>();
-      } else if (format == "raw64") {
-        unpacker = std::make_unique<TTreeUnpackerRaw64>();
-      } else {
-        printf("Unsupported ttree output format %s for %s\\n", format.c_str(), obj.c_str());
-      }
-    } else if (kind == "rntuple") {
-      if (format == "floats") {
-        unpacker = std::make_unique<RNTupleUnpackerFloats>();
-      } else if (format == "coll_float") {
-        unpacker = std::make_unique<RNTupleUnpackerCollFloat>();
-      } else if (format == "ints") {
-        unpacker = std::make_unique<RNTupleUnpackerInts>();
-      } else if (format == "coll_int") {
-        unpacker = std::make_unique<RNTupleUnpackerCollInt>();
-      } else if (format == "raw64") {
-        unpacker = std::make_unique<RNTupleUnpackerRaw64>();
-      } else {
-        printf("Unsupported rntuple output format %s for %s\\n", format.c_str(), obj.c_str());
-      }
-    } else {
-      printf("Unsupported kind %s for %s\n", kind.c_str(), obj.c_str());
-    }
-  } else if (obj == "tkmu") {
-    if (kind == "ttree") {
-      if (format == "float" || format == "float24") {
-        unpacker = std::make_unique<GMTTkMuTTreeUnpackerFloats>(format);
-      } else if (format == "int") {
-        unpacker = std::make_unique<GMTTkMuTTreeUnpackerInts>();
-      } else {
-        printf("Unsupported ttree output format %s for %s\\n", format.c_str(), obj.c_str());
-      }
-    } else if (kind == "rntuple") {
-      if (format == "floats") {
-        unpacker = std::make_unique<GMTTkMuRNTupleUnpackerFloats>();
-      } else if (format == "coll_float") {
-        unpacker = std::make_unique<GMTTkMuRNTupleUnpackerCollFloat>();
-      } else {
-        printf("Unsupported rntuple output format %s for %s\\n", format.c_str(), obj.c_str());
-      }
-    } else {
-      printf("Unsupported kind %s for %s\n", kind.c_str(), obj.c_str());
-    }
-  }
-  if (unpacker)
-    unpacker->setCompression(compressionMethod, compressionLevel);
-  return unpacker;
 }
 
 struct Token {
@@ -142,13 +79,17 @@ struct Totals {
 
 class Executor {
 public:
-  Executor(const UnpackerBase &unpacker, Totals &totals, bool deleteAfterwards)
-      : unpacker_(&unpacker), totals_(&totals), deleteAfterwards_(deleteAfterwards) {}
+  Executor(const RootUnpackMaker::Spec &unpackerSpec, Totals &totals, bool deleteAfterwards)
+      : spec_(unpackerSpec), totals_(&totals), deleteAfterwards_(deleteAfterwards) {}
+  Executor(const Executor &other)
+      : spec_(other.spec_), totals_(other.totals_), deleteAfterwards_(other.deleteAfterwards_) {}
   void operator()(Token token) const {
     if (token.inputs.empty())
       return;
+    if (!unpacker_)
+      unpacker_ = RootUnpackMaker::make(spec_);
     printf("Unpack %s[#%d] -> %s\n", token.inputs.front().c_str(), int(token.inputs.size()), token.output.c_str());
-    auto report = unpacker_->unpack(token.inputs, token.output);
+    auto report = unpacker_->unpackFiles(token.inputs, token.output);
     printReport(report);
     totals_->add(report);
     for (const auto &in : token.inputs)
@@ -160,7 +101,8 @@ public:
   }
 
 private:
-  const UnpackerBase *unpacker_;
+  RootUnpackMaker::Spec spec_;
+  mutable std::unique_ptr<UnpackerBase> unpacker_;
   mutable Totals *totals_;
   const bool deleteAfterwards_;
 };
@@ -344,7 +286,7 @@ std::pair<int, int> initInotify(const std::string &from) {
   return std::make_pair(fd, wd);
 }
 
-int singleCoreLiveUnpacker(const UnpackerBase &unpacker,
+int singleCoreLiveUnpacker(const RootUnpackMaker::Spec &unpackerSpec,
                            const std::string &from,
                            const std::string &to,
                            unsigned int timeslices,
@@ -356,7 +298,7 @@ int singleCoreLiveUnpacker(const UnpackerBase &unpacker,
 
   Totals totals;
   auto src = Source(from, to, timeslices, fdwd.first, totals);
-  auto dest = Executor(unpacker, totals, deleteAfterwards);
+  auto dest = Executor(unpackerSpec, totals, deleteAfterwards);
   bool stop = false;
   while (!stop) {
     dest(src(stop));
@@ -369,7 +311,7 @@ int singleCoreLiveUnpacker(const UnpackerBase &unpacker,
 }
 
 int tbbLiveUnpacker(unsigned int threads,
-                    const UnpackerBase &unpacker,
+                    const RootUnpackMaker::Spec &unpackerSpec,
                     const std::string &from,
                     const std::string &to,
                     unsigned int timeslices,
@@ -385,7 +327,7 @@ int tbbLiveUnpacker(unsigned int threads,
   auto head =
       tbb::make_filter<void, Token>(tbb::filter::serial_in_order, Source(from, to, timeslices, fdwd.first, totals));
   auto tail = tbb::make_filter<Token, void>((threads == 0 ? tbb::filter::serial_in_order : tbb::filter::parallel),
-                                            Executor(unpacker, totals, deleteAfterwards));
+                                            Executor(unpackerSpec, totals, deleteAfterwards));
   tbb::parallel_pipeline(std::max(1u, threads), head & tail);
 
   inotify_rm_watch(fdwd.first, fdwd.second);
@@ -465,12 +407,10 @@ int main(int argc, char **argv) {
          argv[iarg + 3],
          argv[iarg + 4]);
 
-  std::unique_ptr<UnpackerBase> unpacker = makeUnpacker(obj, kind, format, compressionMethod, compressionLevel);
-  if (!unpacker)
-    return 2;
+  RootUnpackMaker::Spec spec(obj, kind, format, compressionMethod, compressionLevel);
   if (threads == -1) {
-    return singleCoreLiveUnpacker(*unpacker, from, to, timeslices, deleteAfterwards);
+    return singleCoreLiveUnpacker(spec, from, to, timeslices, deleteAfterwards);
   } else if (threads >= 0) {
-    return tbbLiveUnpacker(threads, *unpacker, from, to, timeslices, deleteAfterwards);
+    return tbbLiveUnpacker(threads, spec, from, to, timeslices, deleteAfterwards);
   }
 }

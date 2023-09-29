@@ -68,7 +68,7 @@ public:
            const std::string &inFormat,
            const std::string &outFormat,
            const std::string &outPath,
-           Totals & totals)
+           Totals &totals)
       : analysis_(&analysis), inFormat_(inFormat), outFormat_(outFormat), outPath_(outPath), totals_(&totals) {}
   void operator()(std::vector<std::string> inputs) const {
     if (inputs.empty())
@@ -128,7 +128,8 @@ private:
 
 class Source {
 public:
-  Source(const std::string &from, int inotify_fd, Totals & totals) : from_(from), inotify_fd_(inotify_fd), totals_(&totals) {}
+  Source(const std::string &from, int inotify_fd, Totals &totals)
+      : from_(from), inotify_fd_(inotify_fd), totals_(&totals) {}
 
   std::vector<std::string> operator()(tbb::flow_control &fc) const {
     std::vector<std::string> ret;

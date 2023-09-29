@@ -1102,7 +1102,7 @@ public:
         readBytes += totlen256 << 5;
         if (!fout_.is_open() || oh.orbit % orbitsPerFile_ == orbitMux_)
           newFile(oh.orbit);
-        if (prescale_ <= 1 || (oh.orbit % prescale_ == 1)) {
+        if (prescale_ != 0 && oh.orbit % prescale_ == 1) {
           fout_.write(reinterpret_cast<char *>(orbit_buff), totlen256 << 5);
           wroteBytes += totlen256 << 5;
         }

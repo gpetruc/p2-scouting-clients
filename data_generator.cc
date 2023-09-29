@@ -7,6 +7,7 @@
 #include <cassert>
 #include <exception>
 #include <vector>
+#include <array>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -128,17 +129,17 @@ public:
                   unsigned int orbitSize = 2 * 1024 * 1024)
       : GeneratorBase(data, tmux, offs, seed), orbSize_(orbitSize), sync_(sync) {}
   void generate(int fd, unsigned int norbits, unsigned int orbitmux) override final {
-    constexpr unsigned int packetSize = 256 * 256 / 8; // max DTH256 packet size is 256 rows of 256 bits
-    unsigned int maxPackets = std::ceil(float(orbSize_)/packetSize);
-    std::vector<struct iovec> iovecs(2*maxPackets);
-    std::vector<std::array<uint8_t,32>> headers(maxPackets);
+    constexpr unsigned int packetSize = 256 * 256 / 8;  // max DTH256 packet size is 256 rows of 256 bits
+    unsigned int maxPackets = std::ceil(float(orbSize_) / packetSize);
+    std::vector<struct iovec> iovecs(2 * maxPackets);
+    std::vector<std::array<uint8_t, 32>> headers(maxPackets);
     for (unsigned int i = 0; i < maxPackets; ++i) {
-      auto & header = headers[i];
+      auto &header = headers[i];
       std::fill(header.begin(), header.end(), 0);
       header[0] = 0x47;
       header[1] = 0x5a;
-      iovecs[2*i].iov_base = reinterpret_cast<void *>(&headers[i].front());
-      iovecs[2*i].iov_len  = 32;
+      iovecs[2 * i].iov_base = reinterpret_cast<void *>(&headers[i].front());
+      iovecs[2 * i].iov_len = 32;
     }
 
     uint64_t *orbit_buff = reinterpret_cast<uint64_t *>(std::aligned_alloc(4096u, orbSize_));
@@ -156,8 +157,8 @@ public:
       unsigned int ipacket = 0;
       for (int n256 = (nwords + 3) >> 2; n256 > 0; n256 -= 255, ++ipacket) {
         unsigned int chunksize256 = std::min<int>(n256, 255);
-        auto & header = headers[ipacket];
-        auto & iov_data = iovecs[2*ipacket+1];
+        auto &header = headers[ipacket];
+        auto &iov_data = iovecs[2 * ipacket + 1];
         header[6] = chunksize256;
         header[5] = (first ? (1 << 7) : 0) | (n256 <= 255 ? (1 << 6) : 0);
         iov_data.iov_base = ptr;
@@ -165,7 +166,7 @@ public:
         ptr += (chunksize256 << 2);
         first = false;
       }
-      writev(fd, &iovecs.front(), 2*ipacket);
+      writev(fd, &iovecs.front(), 2 * ipacket);
       if (sync_) {
         auto tend = std::chrono::steady_clock::now();
         double dt = (std::chrono::duration<double>(tend - tstart)).count();
@@ -234,14 +235,15 @@ void start_and_run(std::unique_ptr<GeneratorBase> &&generator,
   printf("Starting generator %d to %s\n", iclient, target.c_str());
   int fd;
   auto pos = target.find(':');
+  std::string filename;
   if (pos == std::string::npos) {
     pos = target.find("%d");
     if (pos == std::string::npos) {
-      fd = open(target.c_str(), O_WRONLY | O_TRUNC | O_CREAT);
+      filename = target;
     } else {
-      std::string fname = target.substr(0, pos) + std::to_string(iclient) + target.substr(pos + 2);
-      fd = open(fname.c_str(), O_WRONLY | O_TRUNC | O_CREAT);
+      filename = target.substr(0, pos) + std::to_string(iclient) + target.substr(pos + 2);
     }
+    fd = open(filename.c_str(), O_WRONLY | O_TRUNC | O_CREAT);
   } else {
     std::string ip = target.substr(0, pos), port = target.substr(pos + 1);
     fd = connect_tcp(ip.c_str(), port.c_str(), iclient);
@@ -268,6 +270,9 @@ void start_and_run(std::unique_ptr<GeneratorBase> &&generator,
            dt * 1000,
            orbrate / 1000,
            orbrate / orbrate_lhc);
+    close(fd);
+    if (!filename.empty())
+      chmod(filename.c_str(), S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
   }
 }
 

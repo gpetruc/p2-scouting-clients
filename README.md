@@ -42,16 +42,27 @@ Two small example data files in **DTHBasic** and **DTHBasicOA** formats are avai
    | 55-24 |  32  | orbit number |
    | 23-00 |  24  | size in 64 bit words |
 
- ## Main
+ ## Compiling the code
+
+The standalone code in this directory depends only on a recent gcc. However, the subdirectories `root` and `apache` depend on having root and apache arrow available. The easiest way to set up your environment is to use one of the LCG builds by doing
+```bash
+eval $(make envdev) # use LCG dev3 environment on EL8
+eval $(make env9dev) # use LCG dev3 environment on EL9
+eval $(make env104) # use LCG 104 environment on EL8
+```
+
+By default, the compilation will build also the root and apache subsystems, you can switch this off setting `USE_APACHE=0` and `USE_ROOT=0` in your environment
+
+ ## Main directory
 
 This directory contains a single C++ client `data_checker` that can receive data via TCP/IP or read it from files, and check different formats, and a dummy data generator `data_generator` that can output data.
 
- ```cpp
+ ```bash
 make && make run_tests
  ```
 ### Data checker & receiver
 
-```
+```bash
 ./data_checker.exe [options] Mode Source [arguments]
 ```
 

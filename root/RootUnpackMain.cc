@@ -1,27 +1,35 @@
-#include "TTreeUnpackerBase.h"
-#include "TTreeUnpackerFloats.h"
-#include "TTreeUnpackerInts.h"
-#include "TTreeUnpackerRaw64.h"
-#include "GMTTkMuTTreeUnpackerFloats.h"
-#include "GMTTkMuTTreeUnpackerInts.h"
+#include <TROOT.h>
+#include <TFile.h>
+#include <ROOT/RLogger.hxx>
+#include <ROOT/RNTuple.hxx>
+#include "RootUnpackMaker.h"
+#include "../unpack.h"
 #include <getopt.h>
 
 void usage() {
-  printf("Usage: treeUnpacker.exe [ options ] <obj> <format> infile.dump [infile2.dump ...] [ outfile.root ]\n");
-  printf("  obj := puppi | tkmu \n");
-  printf("  puppi format := float | float24 | int | raw64\n");
-  printf("  tkmu  format := float | float24 | int\n");
+  printf("Usage: rootUnpacker.exe [ options ] <obj> <kind> <format> infile.dump [infile2.dump ...] [ outfile.root ]\n");
+  printf("  obj  := puppi | tkmu \n");
+  printf("  kind := ttree | rntuple\n");
+  printf("  puppi ttree  formats   := float | float24 | int | raw64\n");
+  printf("  puppi rntule formats   := floats | coll_float | ints | coll_int | raw64\n");
+  printf("  tkmu  ttree  formats   := float | float24 | int\n");
+  printf("  tkmu  rntule formats   := floats | coll_float\n");
   printf("Options: \n");
   printf("  -j N            : multithread with N threads\n");
   printf("  -z algo[,level] : enable compression\n");
   printf("                    algorithms supported are none, lzma, zlib, lz4, zstd;\n");
   printf("                    default level is 4\n");
 }
+
 int main(int argc, char **argv) {
   if (argc < 4) {
     usage();
     return 1;
   }
+
+  auto verbosity =
+      ROOT::Experimental::RLogScopedVerbosity(ROOT::Experimental::NTupleLog(), ROOT::Experimental::ELogLevel::kError);
+
   std::string compressionMethod = "none";
   int compressionLevel = 0, threads = -1;
   while (1) {
@@ -58,14 +66,19 @@ int main(int argc, char **argv) {
   }
 
   int iarg = optind, narg = argc - optind;
+  if (narg < 4) {
+    usage();
+    return 1;
+  }
   std::string obj = std::string(argv[iarg]);
-  std::string format = std::string(argv[iarg + 1]);
-  printf("Will run %s with format %s\n", argv[iarg], argv[iarg + 1]);
+  std::string kind = std::string(argv[iarg + 1]);
+  std::string format = std::string(argv[iarg + 2]);
+  printf("Will run %s %s with format %s\n", argv[iarg], argv[iarg + 1], argv[iarg + 2]);
 
   std::vector<std::string> ins;
   std::string output;
 
-  for (int i = iarg + 2; i < iarg + narg; ++i) {
+  for (int i = iarg + 3; i < iarg + narg; ++i) {
     std::string fname = argv[i];
     if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".root") {
       if (!output.empty()) {
@@ -78,33 +91,21 @@ int main(int argc, char **argv) {
     }
   }
 
-  std::unique_ptr<TTreeUnpackerBase> unpacker;
   int ret = 0;
   try {
-    if (obj == "puppi") {
-      if (format == "float" || format == "float24") {
-        unpacker = std::make_unique<TTreeUnpackerFloats>(format);
-      } else if (format == "int") {
-        unpacker = std::make_unique<TTreeUnpackerInts>();
-      } else if (format == "raw64") {
-        unpacker = std::make_unique<TTreeUnpackerRaw64>();
-      }
-    } else if (obj == "tkmu") {
-      if (format == "float" || format == "float24") {
-        unpacker = std::make_unique<GMTTkMuTTreeUnpackerFloats>(format.substr(5));
-      } else if (format == "int") {
-        unpacker = std::make_unique<GMTTkMuTTreeUnpackerInts>();
-      }
-    }
+    std::unique_ptr<UnpackerBase> unpacker =
+        RootUnpackMaker::make(obj, kind, format, compressionMethod, compressionLevel);
     if (!unpacker) {
-      printf("Unsupported object type %s and/or output format %s\n", obj.c_str(), format.c_str());
+      printf("Unsupported object type %s, file type %s and/or output format %s\n",
+             obj.c_str(),
+             kind.c_str(),
+             format.c_str());
       return 1;
     }
-    unpacker->setCompression(compressionMethod, compressionLevel);
     ROOT::EnableThreadSafety();
     if (threads != -1)
       unpacker->setThreads(threads);
-    auto report = unpacker->unpack(ins, output);
+    auto report = unpacker->unpackFiles(ins, output);
     printReport(report);
   } catch (const std::exception &e) {
     printf("Terminating an exception was raised:\n%s\n", e.what());

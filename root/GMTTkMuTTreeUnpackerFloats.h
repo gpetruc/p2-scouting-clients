@@ -7,7 +7,10 @@ public:
   GMTTkMuTTreeUnpackerFloats(const std::string &floatType) : floatType_(floatType) {}
   ~GMTTkMuTTreeUnpackerFloats() override {}
 
-  Report unpack(const std::vector<std::string> &ins, const std::string &out) const override;
+  void bookOutput(const std::string &out) override final;
+
+  void fillEvent(
+      uint16_t run, uint32_t orbit, uint16_t bx, bool good, uint16_t nwords, const uint64_t *words) override final;
 
 protected:
   std::string floatType_;
@@ -24,6 +27,8 @@ protected:
     uint8_t isolation[255];
     float beta[255];
   };
+
+  Data data_;
 };
 
 #endif
