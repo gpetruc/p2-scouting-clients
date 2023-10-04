@@ -4,6 +4,13 @@ LIBS = -lstdc++ $(shell root-config --ldflags --libs) -lROOTNTuple
 DATAFILE ?= data/Puppi.dump
 TKMUDATAFILE ?= data/TkMuons_TM18.dump
 
+ifdef VDT_INCLUDE_DIR
+	CCFLAGS += -I$(VDT_INCLUDE_DIR)
+endif
+ifdef VDT_LIBRARY
+	LIBS += -L$(dir $(VDT_LIBRARY))
+endif
+
 .PHONY: clean env format run_tests run_test_speed run_test_comp run_test_multi run_test_tkmu 
 
 TARGETS := librootUnpacker.so rootUnpacker.exe

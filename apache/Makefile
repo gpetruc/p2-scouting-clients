@@ -1,9 +1,9 @@
 CC = c++
-CCFLAGS = -ggdb --std=c++17 -W -Wall -Wno-unused-variable -Ofast -march=native -Wno-unused-result
+CCFLAGS = -ggdb --std=c++17 -W -Wall -Wno-unused-variable -Wno-unused-parameter -Wno-redundant-move -Ofast -march=native -Wno-unused-result
 LIBS =  -lstdc++ 
 
 ifdef ARROW_INCLUDE
-	CLAGS += -I$(ARROW_INCLUDE)
+	CCFLAGS += -I$(ARROW_INCLUDE)
 endif
 ifdef ARROW_LIB
 	LIBS += -L$(ARROW_LIB)
@@ -14,7 +14,7 @@ USE_PARQUET ?= 0
 ifeq ($(USE_PARQUET), 1)
 	CCFLAGS += -DUSE_PARQUET=1
 	ifdef PARQUET_INCLUDE
-		CLAGS += -I$(PARQUET_INCLUDE)
+		CCFLAGS += -I$(PARQUET_INCLUDE)
 	endif
 	ifdef PARQUET_LIB
 		LIBS += -L$(PARQUET_LIB)
