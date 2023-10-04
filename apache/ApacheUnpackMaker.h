@@ -6,14 +6,14 @@
 namespace ApacheUnpackMaker {
   struct Spec {
     enum class ObjType { Puppi, TkMu };
-    enum class FileKind { IPC };
+    enum class FileKind { IPC, Parquet };
     ObjType objType;
     FileKind fileKind;
     std::string format;
     std::string compressionAlgo;
     int compressionLevel;
     Spec(const std::string &obj,   // puppi
-         const std::string &kind,  // ipc
+         const std::string &kind,  // ipc, parquet
          const std::string &unpackFormat,
          const std::string &compression = "none",
          int level = 0);

@@ -1,8 +1,8 @@
-#include "IPCUnpackerFloats.h"
+#include "ArrowUnpackerFloats.h"
 #include "../unpack.h"
 
-IPCUnpackerFloats::IPCUnpackerFloats(unsigned int batchsize, bool float16)
-    : IPCUnpackerBase(batchsize),
+ArrowUnpackerFloats::ArrowUnpackerFloats(unsigned int batchsize, ApacheUnpackMaker::Spec::FileKind fileKind, bool float16)
+    : ArrowUnpackerBase(batchsize, fileKind),
       float16_(float16),
       floatType_(float16_ ? arrow::float16() : arrow::float32()),
       ptField_(arrow::field("pt", floatType_)),
@@ -21,7 +21,7 @@ IPCUnpackerFloats::IPCUnpackerFloats(unsigned int batchsize, bool float16)
   schema_ = arrow::schema({runField_, orbitField_, bxField_, goodField_, puppiField_});
 }
 
-void IPCUnpackerFloats::unpackAndCommitBatch() {
+void ArrowUnpackerFloats::unpackAndCommitBatch() {
   // make tally
   offsets_.resize(1);
   for (auto n : nwords_)
@@ -73,7 +73,7 @@ void IPCUnpackerFloats::unpackAndCommitBatch() {
   if (outputFile_) {
     std::shared_ptr<arrow::RecordBatch> batch =
         arrow::RecordBatch::Make(schema_, entriesInBatch_, {run, orbit, bx, *good, puppi});
-    batchWriter_->WriteRecordBatch(*batch);
+    writeRecordBatch(*batch);
   }
   entriesInBatch_ = 0;
   offsets_.resize(1);

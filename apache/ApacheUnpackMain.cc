@@ -24,6 +24,8 @@ bool is_output_fname(const std::string &fname) {
     return true;
   if (fname.length() > 4 && fname.substr(fname.length() - 4) == ".ipc")
     return true;
+  if (fname.length() > 8 && fname.substr(fname.length() - 8) == ".parquet")
+    return true;    
   return false;
 }
 
@@ -94,12 +96,12 @@ int main(int argc, char **argv) {
     std::string fname = argv[i];
     if (is_output_fname(fname)) {
       if (!output.empty()) {
-        printf("Multiple output root files specified in the command line\n");
+        printf("Multiple output files specified in the command line\n");
         return 2;
       }
       output = fname;
     } else {  // assume it's an input file
-      ins.emplace_back(argv[i]);
+      ins.push_back(fname);
     }
   }
 

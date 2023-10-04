@@ -1,10 +1,31 @@
 CC = c++
 CCFLAGS = -ggdb --std=c++17 -W -Wall -Wno-unused-variable -Ofast -march=native -Wno-unused-result
-LIBS = -L/cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/lib64 -lstdc++ -larrow 
+LIBS =  -lstdc++ 
+
+ifdef ARROW_INCLUDE
+	CLAGS += -I$(ARROW_INCLUDE)
+endif
+ifdef ARROW_LIB
+	LIBS += -L$(ARROW_LIB)
+endif
+LIBS += -larrow
+
+USE_PARQUET ?= 0
+ifeq ($(USE_PARQUET), 1)
+	CCFLAGS += -DUSE_PARQUET=1
+	ifdef PARQUET_INCLUDE
+		CLAGS += -I$(PARQUET_INCLUDE)
+	endif
+	ifdef PARQUET_LIB
+		LIBS += -L$(PARQUET_LIB)
+	endif
+	LIBS += -lparquet
+endif
+
 DATAFILE ?= ../root/data/Puppi.dump
 TKMUDATAFILE ?= ../root/data/TkMuons_TM18.dump
 
-.PHONY: clean env format run_test_unpack run_test_speed run_test_comp
+.PHONY: clean env format run_tests run_test_parquet run_test_speed run_test_comp
 
 all: arrow_read.exe apacheUnpacker.exe
 
@@ -13,10 +34,10 @@ BASE_LIB := ../libunpackerBase.so
 ../libunpackerBase.so: ../UnpackerBase.cc $(BASE_INC)
 	cd .. && $(MAKE) libunpackerBase.so
 
-IPC_UNPACKER_SRC := $(wildcard *IPCUnpacker*.cc)
+IPC_UNPACKER_SRC := $(wildcard *ArrowUnpacker*.cc)
 IPC_UNPACKER_INC := $(IPC_UNPACKER_SRC:.cc=.h)
 IPC_UNPACKER_OBJ := $(IPC_UNPACKER_SRC:.cc=.o)
-$(IPC_UNPACKER_OBJ): %.o: %.cc %.h IPCUnpackerBase.h $(BASE_INC)
+$(IPC_UNPACKER_OBJ): %.o: %.cc %.h ArrowUnpackerBase.h $(BASE_INC)
 	$(CC) -fPIC $(CCFLAGS) -c $< -o $@
 
 ApacheUnpackMaker.o : ApacheUnpackMaker.cc ApacheUnpackMaker.h  $(IPC_UNPACKER_INC)  $(BASE_INC)
@@ -35,18 +56,25 @@ format:
 	@clang-format -i *.h *.cc
 
 clean:
-	@rm *.exe *.arrow *.o *.so 2> /dev/null || true
+	@rm *.exe *.arrow *.icp *.parquet *.o *.so 2> /dev/null || true
 
 run_tests: apacheUnpacker.exe arrow_read.exe
-	@for T in float float16 int raw64 ; do  \
-		./apacheUnpacker.exe puppi ipc $$T ../root/data/Puppi.dump puppi.ipc.$${T}.arrow; \
-	done
-	@for T in float float16 ; do  \
-		./apacheUnpacker.exe tkmu ipc $$T ../root/data/TkMuons_TM18.dump tkmu.ipc.$${T}.arrow; \
-	done
+	./apacheUnpacker.exe puppi ipc float ../root/data/Puppi.dump puppi.ipc.float.arrow
+	./apacheUnpacker.exe puppi ipc float16 ../root/data/Puppi.dump puppi.ipc.float16.arrow
+	./apacheUnpacker.exe puppi ipc int ../root/data/Puppi.dump puppi.ipc.int.arrow
+	./apacheUnpacker.exe puppi ipc raw64 ../root/data/Puppi.dump puppi.ipc.raw64.arrow
+	./apacheUnpacker.exe tkmu ipc float ../root/data/TkMuons_TM18.dump tkmu.ipc.float.arrow; 
+	./apacheUnpacker.exe tkmu ipc float16 ../root/data/TkMuons_TM18.dump tkmu.ipc.float16.arrow; 
 	@for T in float float16 int raw64 ; do  \
 		./arrow_read.exe ipc  puppi.ipc.$${T}.arrow | head -n 15; echo; \
 	done
+
+run_test_parquet: apacheUnpacker.exe arrow_read.exe
+	./apacheUnpacker.exe puppi parquet float ../root/data/Puppi.dump puppi.parquet.float.parquet
+	./apacheUnpacker.exe puppi parquet float16 ../root/data/Puppi.dump puppi.parquet.float16.parquet
+	./apacheUnpacker.exe puppi parquet int ../root/data/Puppi.dump puppi.parquet.int.parquet
+	./apacheUnpacker.exe puppi parquet raw64 ../root/data/Puppi.dump puppi.parquet.raw64.parquet
+	./apacheUnpacker.exe tkmu parquet float ../root/data/TkMuons_TM18.dump tkmu.parquet.float.parquet; 
 
 run_test_speed: apacheUnpacker.exe
 	@echo "==== No output ===="

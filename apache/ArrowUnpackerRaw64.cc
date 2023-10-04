@@ -1,15 +1,15 @@
-#include "IPCUnpackerRaw64.h"
+#include "ArrowUnpackerRaw64.h"
 #include "../unpack.h"
 
-IPCUnpackerRaw64::IPCUnpackerRaw64(unsigned int batchsize)
-    : IPCUnpackerBase(batchsize),
+ArrowUnpackerRaw64::ArrowUnpackerRaw64(unsigned int batchsize, ApacheUnpackMaker::Spec::FileKind fileKind)
+    : ArrowUnpackerBase(batchsize, fileKind),
       puppisType_(arrow::list(arrow::uint64())),
       puppiField_(arrow::field("Puppi", puppisType_)),
       offsets_(1, 0) {
   schema_ = arrow::schema({runField_, orbitField_, bxField_, goodField_, puppiField_});
 }
 
-void IPCUnpackerRaw64::unpackAndCommitBatch() {
+void ArrowUnpackerRaw64::unpackAndCommitBatch() {
   // make tally
   offsets_.resize(1);
   for (auto n : nwords_)
@@ -26,7 +26,7 @@ void IPCUnpackerRaw64::unpackAndCommitBatch() {
   if (outputFile_) {
     std::shared_ptr<arrow::RecordBatch> batch =
         arrow::RecordBatch::Make(schema_, entriesInBatch_, {run, orbit, bx, *good, puppi});
-    batchWriter_->WriteRecordBatch(*batch);
+    writeRecordBatch(*batch);
   }
   entriesInBatch_ = 0;
   offsets_.resize(1);

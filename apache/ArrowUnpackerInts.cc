@@ -1,8 +1,8 @@
-#include "IPCUnpackerInts.h"
+#include "ArrowUnpackerInts.h"
 #include "../unpack.h"
 
-IPCUnpackerInts::IPCUnpackerInts(unsigned int batchsize)
-    : IPCUnpackerBase(batchsize),
+ArrowUnpackerInts::ArrowUnpackerInts(unsigned int batchsize, ApacheUnpackMaker::Spec::FileKind fileKind)
+    : ArrowUnpackerBase(batchsize, fileKind),
       ptField_(arrow::field("pt", arrow::uint16())),
       etaField_(arrow::field("eta", arrow::int16())),
       phiField_(arrow::field("phi", arrow::int16())),
@@ -19,7 +19,7 @@ IPCUnpackerInts::IPCUnpackerInts(unsigned int batchsize)
   schema_ = arrow::schema({runField_, orbitField_, bxField_, goodField_, puppiField_});
 }
 
-void IPCUnpackerInts::unpackAndCommitBatch() {
+void ArrowUnpackerInts::unpackAndCommitBatch() {
   // make tally
   offsets_.resize(1);
   for (auto n : nwords_)
@@ -65,7 +65,7 @@ void IPCUnpackerInts::unpackAndCommitBatch() {
   if (outputFile_) {
     std::shared_ptr<arrow::RecordBatch> batch =
         arrow::RecordBatch::Make(schema_, entriesInBatch_, {run, orbit, bx, *good, puppi});
-    batchWriter_->WriteRecordBatch(*batch);
+    writeRecordBatch(*batch);
   }
   entriesInBatch_ = 0;
   offsets_.resize(1);

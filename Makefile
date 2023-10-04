@@ -28,6 +28,8 @@ ifeq ($(USE_ROOT), 1)
 	@echo 'export LD_LIBRARY_PATH=$$PWD/root:$${LD_LIBRARY_PATH};'
 endif
 ifeq ($(USE_APACHE), 1)
+	@echo 'export ARROW_INCLUDE=/cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/include;'
+	@echo 'export ARROW_LIB=/cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/lib64;'
 	@echo 'export LD_LIBRARY_PATH=$$PWD/apache:$${LD_LIBRARY_PATH};'
 endif
 
@@ -39,6 +41,8 @@ ifeq ($(USE_ROOT), 1)
 	@echo 'export LD_LIBRARY_PATH=$$PWD/root:$${LD_LIBRARY_PATH};'
 endif
 ifeq ($(USE_APACHE), 1)
+	@echo 'export ARROW_INCLUDE=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt;'
+	@echo 'export ARROW_LIB=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt/lib64;'
 	@echo 'export LD_LIBRARY_PATH=$$PWD/apache:$${LD_LIBRARY_PATH};'
 endif
 
@@ -50,6 +54,8 @@ ifeq ($(USE_ROOT), 1)
 	@echo 'export LD_LIBRARY_PATH=$$PWD/root:$${LD_LIBRARY_PATH};'
 endif
 ifeq ($(USE_APACHE), 1)
+	@echo 'export ARROW_INCLUDE=/cvmfs/sft.cern.ch/lcg/views/dev3/latest/x86_64-el9-gcc13-opt/include;'
+	@echo 'export ARROW_LIB=/cvmfs/sft.cern.ch/lcg/views/dev3/latest/x86_64-el9-gcc13-opt/lib64;'
 	@echo 'export LD_LIBRARY_PATH=$$PWD/apache:$${LD_LIBRARY_PATH};'
 endif
 
@@ -77,7 +83,7 @@ format:
 	@cd root && $(MAKE) format
 
 clean:
-	@rm *.exe *.data 2> /dev/null || true
+	@rm *.exe *.data *.o *.so 2> /dev/null || true
 
 run_tests: data_checker.exe data_generator.exe
 	@echo "Running basic file tests"

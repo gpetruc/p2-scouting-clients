@@ -1,11 +1,11 @@
-#ifndef p2_clients_apache_IPCUnpackerTkMuFloats_h
-#define p2_clients_apache_IPCUnpackerTkMuFloats_h
-#include "IPCUnpackerBase.h"
+#ifndef p2_clients_apache_ArrowUnpackerTkMuFloats_h
+#define p2_clients_apache_ArrowUnpackerTkMuFloats_h
+#include "ArrowUnpackerBase.h"
 
-class IPCUnpackerTkMuFloats : public IPCUnpackerBase {
+class ArrowUnpackerTkMuFloats : public ArrowUnpackerBase {
 public:
-  IPCUnpackerTkMuFloats(unsigned int batchsize, bool float16 = false);
-  ~IPCUnpackerTkMuFloats() {}
+  ArrowUnpackerTkMuFloats(unsigned int batchsize, ApacheUnpackMaker::Spec::FileKind fileKind, bool float16 = false);
+  ~ArrowUnpackerTkMuFloats() {}
   void unpackAndCommitBatch();
 
 protected:
