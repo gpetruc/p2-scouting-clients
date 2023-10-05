@@ -17,3 +17,5 @@ AlwaysBreakTemplateDeclarations: Yes
 ReflowComments: false
 BinPackArguments: false
 BinPackParameters: false
+## CHANGE FOR hls
+IndentPPDirectives: BeforeHash

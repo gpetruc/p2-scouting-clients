@@ -128,4 +128,4 @@ TCP/IP can also be used, but FIFOs are faster.
 
 ### Utilities
 
-`utils/file_waiter.cc` is a simple demonstration program that shows how to monitor a directory for new files.
+`utils/file_waiter.cc` is a simple demonstration program that shows how to monitor a directory for new files. If passed the string `delete` as second argument, it will delete new files that are moved into that directory.

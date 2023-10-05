@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <errno.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -10,7 +11,7 @@ int main(int argc, char **argv) {
   const unsigned int BUF_LEN = 1024 * (EVENT_SIZE + 16);
   char buffer[BUF_LEN];
 
-  if (argc < 1)
+  if (argc < 2)
     return 1;
 
   int fd = inotify_init();
@@ -22,6 +23,11 @@ int main(int argc, char **argv) {
 
   int wd = inotify_add_watch(fd, argv[1], IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO);
   printf("Watching %s for new files\n", argv[1]);
+  bool delfiles = false; 
+  if (argc == 3 && std::string(argv[2]) == "delete") {
+    delfiles = true;
+    printf("Will delete any files that are MOVED INTO this path\n");
+  }
   for (;;) {
     int length = read(fd, buffer, BUF_LEN);
 
@@ -49,7 +55,12 @@ int main(int argc, char **argv) {
           if (event->mask & IN_ISDIR) {
             printf("The directory %s was moved to here.\n", event->name);
           } else {
-            printf("The file %s was moved to here.\n", event->name);
+            if (delfiles) {
+              printf("The file %s was moved to here, and will be deleted.\n", event->name);
+              unlink((std::string(argv[1])+"/"+event->name).c_str());
+            } else {
+              printf("The file %s was moved to here.\n", event->name);
+            }
           }
         }
       }
