@@ -19,8 +19,10 @@ ApacheUnpackMaker::Spec::Spec(const std::string &obj,
   } else {
     throw std::invalid_argument("Unsupported object type '" + obj + "', must be 'puppi' or 'tkmu'");
   }
-  if (kind == "ipc") {
-    fileKind = FileKind::IPC;
+  if (kind == "ipcstream") {
+    fileKind = FileKind::IPCStream;
+  } else if (kind == "ipcfile") {
+    fileKind = FileKind::IPCFile;
   } else if (kind == "parquet") {
 #ifdef USE_PARQUET
     fileKind = FileKind::Parquet;
@@ -35,7 +37,7 @@ std::unique_ptr<UnpackerBase> ApacheUnpackMaker::make(const ApacheUnpackMaker::S
   std::unique_ptr<UnpackerBase> unpacker;
   switch (spec.objType) {
     case Spec::ObjType::Puppi:
-      if (spec.fileKind == Spec::FileKind::IPC || spec.fileKind == Spec::FileKind::Parquet) {
+      if (spec.fileKind == Spec::FileKind::IPCStream || spec.fileKind == Spec::FileKind::IPCFile || spec.fileKind == Spec::FileKind::Parquet) {
         if (spec.format == "float" || spec.format == "float16") {
           unpacker = std::make_unique<ArrowUnpackerFloats>(batchsize, spec.fileKind, spec.format == "float16");
         } else if (spec.format == "int") {
@@ -50,7 +52,7 @@ std::unique_ptr<UnpackerBase> ApacheUnpackMaker::make(const ApacheUnpackMaker::S
       }
       break;
     case Spec::ObjType::TkMu:
-      if (spec.fileKind == Spec::FileKind::IPC || spec.fileKind == Spec::FileKind::Parquet) {
+      if (spec.fileKind == Spec::FileKind::IPCStream || spec.fileKind == Spec::FileKind::IPCFile || spec.fileKind == Spec::FileKind::Parquet) {
         if (spec.format == "float" || spec.format == "float16") {
           unpacker = std::make_unique<ArrowUnpackerTkMuFloats>(batchsize, spec.fileKind, spec.format == "float16");
         } else {

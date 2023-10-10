@@ -27,61 +27,61 @@ void ArrowUnpackerBase::bookOutput(const std::string &out) {
   if (!out.empty()) {
     assert(fout_.empty());
     fout_ = out;
-    switch (fileKind_) {
-      case ApacheUnpackMaker::Spec::FileKind::IPC:
-        if (out.length() <= 7 || out.substr(out.length() - 6) != ".arrow") {
-          fout_ = out + ".arrow";
-        }
-        break;
-      case ApacheUnpackMaker::Spec::FileKind::Parquet:
-        if (out.length() <= 9 || out.substr(out.length() - 8) != ".parquet") {
-          fout_ = out + ".parquet";
-        }
-        break;
+    if (fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCStream || fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCFile) {
+      if (out.length() <= 7 || out.substr(out.length() - 6) != ".arrow") {
+        fout_ = out + ".arrow";
+      }
+#ifdef USE_PARQUET
+    } else if (fileKind_ == ApacheUnpackMaker::Spec::FileKind::Parquet) {
+      if (out.length() <= 9 || out.substr(out.length() - 8) != ".parquet") {
+        fout_ = out + ".parquet";
+      }
+#endif
     }
     outputFile_ = *arrow::io::FileOutputStream::Open(fout_);
-    switch (fileKind_) {
-      case ApacheUnpackMaker::Spec::FileKind::IPC: {
-        arrow::ipc::IpcWriteOptions ipcWriteOptions = arrow::ipc::IpcWriteOptions::Defaults();
-        if (compressionMethod_ == "lz4") {
-          ipcWriteOptions.codec = *arrow::util::Codec::Create(arrow::Compression::LZ4_FRAME, compressionLevel_);
-        } else if (compressionMethod_ == "zstd") {
-          ipcWriteOptions.codec = *arrow::util::Codec::Create(arrow::Compression::ZSTD, compressionLevel_);
-        } else if (compressionMethod_ != "none") {
-          throw std::invalid_argument("Unknown compression " + compressionMethod_);
-        }
+    if (fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCStream || fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCFile) {
+      arrow::ipc::IpcWriteOptions ipcWriteOptions = arrow::ipc::IpcWriteOptions::Defaults();
+      if (compressionMethod_ == "lz4") {
+        ipcWriteOptions.codec = *arrow::util::Codec::Create(arrow::Compression::LZ4_FRAME, compressionLevel_);
+      } else if (compressionMethod_ == "zstd") {
+        ipcWriteOptions.codec = *arrow::util::Codec::Create(arrow::Compression::ZSTD, compressionLevel_);
+      } else if (compressionMethod_ != "none") {
+        throw std::invalid_argument("Unknown compression " + compressionMethod_);
+      }
+      if (fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCStream) {
         batchWriter_ = *arrow::ipc::MakeStreamWriter(outputFile_, schema_, ipcWriteOptions);
-      } break;
-      case ApacheUnpackMaker::Spec::FileKind::Parquet: {
-#ifdef USE_PARQUET
-        // Choose compression
-        std::shared_ptr<parquet::WriterProperties> props;
-        auto builder = parquet::WriterProperties::Builder();
-        arrow::ipc::IpcWriteOptions ipcWriteOptions = arrow::ipc::IpcWriteOptions::Defaults();
-        if (compressionMethod_ == "lz4") {
-          props = builder.compression(arrow::Compression::LZ4_HADOOP)->compression_level(compressionLevel_)->build();
-        } else if (compressionMethod_ == "zlib") {
-          props = builder.compression(arrow::Compression::GZIP)->compression_level(compressionLevel_)->build();
-        } else if (compressionMethod_ == "zstd") {
-          props = builder.compression(arrow::Compression::ZSTD)->compression_level(compressionLevel_)->build();
-        } else if (compressionMethod_ == "snappy") {
-          props = builder.compression(arrow::Compression::SNAPPY)->compression_level(compressionLevel_)->build();
-        } else if (compressionMethod_ != "none") {
-          props = builder.build();
-        } else if (compressionMethod_ != "none") {
-          throw std::invalid_argument("Unknown compression " + compressionMethod_);
-        }
-        //std::shared_ptr<parquet::ArrowWriterProperties> arrow_props =
-        //    parquet::ArrowWriterProperties::Builder().store_schema()->build();
-        std::shared_ptr<parquet::ArrowWriterProperties> arrow_props = parquet::ArrowWriterProperties::Builder().build();
-        parquetWriter_ =
-            *parquet::arrow::FileWriter::Open(*schema_, arrow::default_memory_pool(), outputFile_, props, arrow_props);
-#endif            
-      } break;
+      } else if (fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCFile) {
+        batchWriter_ = *arrow::ipc::MakeFileWriter(outputFile_, schema_, ipcWriteOptions);
+      }
     }
-    entriesInBatch_ = 0;
-    batches_ = 0;
+#ifdef USE_PARQUET
+  } else if (fileKind_ == ApacheUnpackMaker::Spec::FileKind::Parquet) {
+    // Choose compression
+    std::shared_ptr<parquet::WriterProperties> props;
+    auto builder = parquet::WriterProperties::Builder();
+    arrow::ipc::IpcWriteOptions ipcWriteOptions = arrow::ipc::IpcWriteOptions::Defaults();
+    if (compressionMethod_ == "lz4") {
+      props = builder.compression(arrow::Compression::LZ4_HADOOP)->compression_level(compressionLevel_)->build();
+    } else if (compressionMethod_ == "zlib") {
+      props = builder.compression(arrow::Compression::GZIP)->compression_level(compressionLevel_)->build();
+    } else if (compressionMethod_ == "zstd") {
+      props = builder.compression(arrow::Compression::ZSTD)->compression_level(compressionLevel_)->build();
+    } else if (compressionMethod_ == "snappy") {
+      props = builder.compression(arrow::Compression::SNAPPY)->compression_level(compressionLevel_)->build();
+    } else if (compressionMethod_ != "none") {
+      props = builder.build();
+    } else if (compressionMethod_ != "none") {
+      throw std::invalid_argument("Unknown compression " + compressionMethod_);
+    }
+    //std::shared_ptr<parquet::ArrowWriterProperties> arrow_props =
+    //    parquet::ArrowWriterProperties::Builder().store_schema()->build();
+    std::shared_ptr<parquet::ArrowWriterProperties> arrow_props = parquet::ArrowWriterProperties::Builder().build();
+    parquetWriter_ =
+        *parquet::arrow::FileWriter::Open(*schema_, arrow::default_memory_pool(), outputFile_, props, arrow_props);
+#endif
   }
+  entriesInBatch_ = 0;
+  batches_ = 0;
 }
 
 unsigned long int ArrowUnpackerBase::closeOutput() {
@@ -89,6 +89,8 @@ unsigned long int ArrowUnpackerBase::closeOutput() {
   if (entriesInBatch_)
     unpackAndCommitBatch();
   if (outputFile_) {
+    if (batchWriter_)
+      batchWriter_->Close();
     outputFile_->Close();
     ret = std::filesystem::file_size(fout_);
     fout_.clear();

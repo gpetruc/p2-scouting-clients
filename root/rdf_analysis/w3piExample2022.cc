@@ -12,6 +12,7 @@
 
 #include "ROOT/RNTupleDS.hxx"
 #include <ROOT/RSnapshotOptions.hxx>
+#include "RArrowDS2.hxx"
 #include <chrono>
 
 w3piExample2022::w3piExample2022(const std::string &cutChoice, bool verbose) : verbose_(verbose) {
@@ -205,7 +206,7 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
     c_dxy = "L1Puppi_dxy";
     c_z0 = "L1Puppi_z0";
     c_wpuppi = "L1Puppi_wpuppi";
-  } else if (format == "rntuple_coll") {
+  } else if (format == "rntuple_coll" || format == "arrow") {
     c_pt = "Puppi.pt";
     c_eta = "Puppi.eta";
     c_phi = "Puppi.phi";
@@ -315,6 +316,11 @@ rdfAnalysis::Report w3piExample2022::run(const std::string &format,
     assert(infiles.size() == 1);
     ROOT::RDataFrame d = ROOT::RDF::Experimental::FromRNTuple("Events", infiles.front());
     //d.Describe().Print();
+    analyze(d, format, ntot, npre, npass, outformat, outfile);
+  } else if (format.find("arrow") == 0) {
+    assert(infiles.size() == 1);
+    ROOT::RDataFrame d = ROOT::RDF::FromArrowIPCStream(infiles.front(), {});
+    d.Describe().Print();
     analyze(d, format, ntot, npre, npass, outformat, outfile);
   } else {
     ROOT::RDataFrame d("Events", infiles);

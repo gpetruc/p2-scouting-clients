@@ -7,6 +7,8 @@ endif
 ifdef VDT_LIBRARY
 	LIBS += -L$(dir $(VDT_LIBRARY))
 endif
+CCFLAGS += -I$(ARROW_INCLUDE) -I.
+LIBS += -L$(ARROW_LIB) -larrow
 
 .PHONY: clean format 
 
@@ -20,17 +22,23 @@ ANALYSES_SRC := analysis.cc w3piExample2022.cc
 ANALYSES_OBJ := $(ANALYSES_SRC:.cc=.o)
 ANALYSES_H := $(ANALYSES_SRC:.cc=.h)
 
-$(ANALYSES_OBJ): %.o: %.cc %.h analysis.h
+EXTRA_HEADERS := RArrowDS2.hxx
+EXTRA_OBJS := RArrowDS2.o 
+
+RArrowDS2.o : RArrowDS2.cxx RArrowDS2.hxx
 	$(CC) $(CCFLAGS) -c $< -o $@
 
-run.exe: run.cc $(ANALYSES_OBJ)
+$(ANALYSES_OBJ): %.o: %.cc %.h analysis.h $(EXTRA_HEADERS)
+	$(CC) $(CCFLAGS) -c $< -o $@
+
+run.exe: run.cc $(ANALYSES_OBJ) $(EXTRA_OBJS)
 	$(CC) $(CCFLAGS) $(LIBS) $^ -o $@
 
-liveAnalysis.exe: liveAnalysis.cc $(ANALYSES_OBJ)
+liveAnalysis.exe: liveAnalysis.cc $(ANALYSES_OBJ) $(EXTRA_OBJS)
 	$(CC) $(CCFLAGS) $(LIBS) $^ -I$(LCG)/include -ltbb -o $@
 
 format:
-	@clang-format -i *.cc *.h
+	@clang-format -i *.cc *.h *.cxx *.hxx
 
 clean:
 	@rm *.o *.exe *.root *.raw  2> /dev/null || true
@@ -71,30 +79,34 @@ TREEINTFILE = $(OUTDIR)/ttree_int.root
 RNTCFILE = $(OUTDIR)/rnt_coll.root
 RNTVFILE = $(OUTDIR)/rnt_vec.root
 RNTVIFILE = $(OUTDIR)/rnt_vec_int.root
+ARRFILE = $(OUTDIR)/ipc.float.arrow
 
 run_test_speed: ./run.exe
 	@echo "=== Create inputs ==="
 	../rootUnpacker.exe puppi ttree float $(DATAFILE) $(TREEFILE) > /dev/null
-	../rootUnpacker.exe puppi ttree float24 $(DATAFILE) $(TREE24FILE) > /dev/null
-	../rootUnpacker.exe puppi ttree int $(DATAFILE) $(TREEINTFILE) > /dev/null
+	#../rootUnpacker.exe puppi ttree float24 $(DATAFILE) $(TREE24FILE) > /dev/null
+	#../rootUnpacker.exe puppi ttree int $(DATAFILE) $(TREEINTFILE) > /dev/null
 	../rootUnpacker.exe puppi rntuple coll_float $(DATAFILE) $(RNTCFILE) > /dev/null
 	../rootUnpacker.exe puppi rntuple floats $(DATAFILE) $(RNTVFILE) > /dev/null
-	../rootUnpacker.exe puppi rntuple ints $(DATAFILE) $(RNTVIFILE) > /dev/null
+	#../rootUnpacker.exe puppi rntuple ints $(DATAFILE) $(RNTVIFILE) > /dev/null
+	../../apacheUnpacker.exe puppi ipc float $(DATAFILE) $(ARRFILE) > /dev/null
 	@echo "=== W->3pi 2022 NO OUTPUT ==="
 	./run.exe w3piExample2022 loose $(TREEFILE) -f tree 
-	./run.exe w3piExample2022 loose $(TREE24FILE) -f tree 
-	./run.exe w3piExample2022 loose $(TREEINTFILE) -f tree_int 
+	#./run.exe w3piExample2022 loose $(TREE24FILE) -f tree 
+	#./run.exe w3piExample2022 loose $(TREEINTFILE) -f tree_int 
 	./run.exe w3piExample2022 loose $(RNTCFILE) -f rntuple_coll
 	./run.exe w3piExample2022 loose $(RNTVFILE) -f rntuple_vec
-	@echo "=== W->3pi 2022 RAW HISTO ==="
-	./run.exe w3piExample2022 loose $(TREEFILE) -f tree -o rawhisto histo.raw
-	./run.exe w3piExample2022 loose $(RNTCFILE) -f rntuple_coll -o rawhisto histo_fromRN.raw
-	./run.exe w3piExample2022 loose $(RNTVFILE) -f rntuple_vec -o rawhisto histo_fromRNv.raw
-	@echo "=== W->3pi 2022 SNAPSHOT ==="
-	./run.exe w3piExample2022 loose $(TREEFILE) -f tree -o snapshot $(OUTDIR)/snapshot.root
-	./run.exe w3piExample2022 loose $(TREE24FILE) -f tree   -o snapshot $(OUTDIR)/snapshot24.root
-	./run.exe w3piExample2022 loose $(TREEINTFILE) -f tree_int  -o snapshot $(OUTDIR)/snapshotInt.root
-	./run.exe w3piExample2022 loose $(RNTCFILE) -f rntuple_coll -o snapshot $(OUTDIR)/snapshot_fromRN.root
-	./run.exe w3piExample2022 loose $(RNTVFILE) -f rntuple_vec -o snapshot $(OUTDIR)/snapshot_fromRNv.root
-	./run.exe w3piExample2022 loose $(RNTVIFILE) -f rntuple_vec_int -o snapshot $(OUTDIR)/snapshot_fromRNv.root
+	#./run.exe w3piExample2022 loose $(RNTVIFILE) -f rntuple_vec_int
+	./run.exe w3piExample2022 loose $(ARRFILE) -f arrow
+	#@echo "=== W->3pi 2022 RAW HISTO ==="
+	#./run.exe w3piExample2022 loose $(TREEFILE) -f tree -o rawhisto histo.raw
+	#./run.exe w3piExample2022 loose $(RNTCFILE) -f rntuple_coll -o rawhisto histo_fromRN.raw
+	#./run.exe w3piExample2022 loose $(RNTVFILE) -f rntuple_vec -o rawhisto histo_fromRNv.raw
+	#@echo "=== W->3pi 2022 SNAPSHOT ==="
+	#./run.exe w3piExample2022 loose $(TREEFILE) -f tree -o snapshot $(OUTDIR)/snapshot.root
+	#./run.exe w3piExample2022 loose $(TREE24FILE) -f tree   -o snapshot $(OUTDIR)/snapshot24.root
+	#./run.exe w3piExample2022 loose $(TREEINTFILE) -f tree_int  -o snapshot $(OUTDIR)/snapshotInt.root
+	#./run.exe w3piExample2022 loose $(RNTCFILE) -f rntuple_coll -o snapshot $(OUTDIR)/snapshot_fromRN.root
+	#./run.exe w3piExample2022 loose $(RNTVFILE) -f rntuple_vec -o snapshot $(OUTDIR)/snapshot_fromRNv.root
+	#./run.exe w3piExample2022 loose $(RNTVIFILE) -f rntuple_vec_int -o snapshot $(OUTDIR)/snapshot_fromRNv.root
 
