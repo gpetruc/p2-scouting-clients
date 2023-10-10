@@ -24,30 +24,34 @@ endif
 
 DATAFILE ?= ../root/data/Puppi.dump
 TKMUDATAFILE ?= ../root/data/TkMuons_TM18.dump
+OUTDIR ?= /run/user/$$UID
 
-.PHONY: clean env format run_tests run_test_parquet run_test_speed run_test_comp
+.PHONY: clean format run_tests run_test_parquet run_test_speed run_test_comp
 
 all: arrow_read.exe apacheUnpacker.exe
 
+vpath %.so . ..
 BASE_INC := ../unpack.h  ../UnpackerBase.h
-BASE_LIB := ../libunpackerBase.so
-../libunpackerBase.so: ../UnpackerBase.cc $(BASE_INC)
-	cd .. && $(MAKE) libunpackerBase.so
+BASE_LIB := libunpackerBase.so
+$(BASE_LIB): ../UnpackerBase.cc $(BASE_INC)
+	cd .. && $(MAKE) $@
 
-IPC_UNPACKER_SRC := $(wildcard *ArrowUnpacker*.cc)
-IPC_UNPACKER_INC := $(IPC_UNPACKER_SRC:.cc=.h)
-IPC_UNPACKER_OBJ := $(IPC_UNPACKER_SRC:.cc=.o)
-$(IPC_UNPACKER_OBJ): %.o: %.cc %.h ArrowUnpackerBase.h $(BASE_INC)
+ARROW_UNPACKER_SRC := $(wildcard *ArrowUnpacker*.cc)
+ARROW_UNPACKER_INC := $(ARROW_UNPACKER_SRC:.cc=.h)
+ARROW_UNPACKER_OBJ := $(ARROW_UNPACKER_SRC:.cc=.o)
+$(ARROW_UNPACKER_OBJ): %.o: %.cc %.h ArrowUnpackerBase.h $(BASE_INC)
 	$(CC) -fPIC $(CCFLAGS) -c $< -o $@
 
-ApacheUnpackMaker.o : ApacheUnpackMaker.cc ApacheUnpackMaker.h  $(IPC_UNPACKER_INC)  $(BASE_INC)
+ALLOBJ := ApacheUnpackMaker.o $(ARROW_UNPACKER_OBJ)
+
+ApacheUnpackMaker.o : ApacheUnpackMaker.cc ApacheUnpackMaker.h  $(ARROW_UNPACKER_INC)  $(BASE_INC)
 	$(CC) -fPIC $(CCFLAGS) -c $< -o $@
 
-libapacheUnpacker.so: ApacheUnpackMaker.o $(IPC_UNPACKER_OBJ) $(BASE_LIB)
-	$(CC) -shared $(CCFLAGS) $(LIBS) $^ -L.. -lunpackerBase -o $@
+libapacheUnpacker.so: $(ALLOBJ) -lunpackerBase
+	$(CC) -shared $(CCFLAGS) $(LIBS) $(ALLOBJ) -L.. -lunpackerBase -o $@
 
-apacheUnpacker.exe: ApacheUnpackMain.cc libapacheUnpacker.so
-	$(CC) $(CCFLAGS) $(LIBS) $^ -L.. -L. -lunpackerBase -lapacheUnpacker -o $@
+apacheUnpacker.exe: ApacheUnpackMain.cc -lunpackerBase -lapacheUnpacker
+	$(CC) $(CCFLAGS) $(LIBS) $< -L.. -L. -lunpackerBase -lapacheUnpacker -o $@
 
 arrow_read.exe : arrow_read.cc
 	$(CC) $(CCFLAGS) $(LIBS) $< -o $@
@@ -84,22 +88,22 @@ run_test_speed: apacheUnpacker.exe
 	@./apacheUnpacker.exe puppi ipc raw64 $(DATAFILE) 
 	@./apacheUnpacker.exe tkmu ipc float $(TKMUDATAFILE)
 	@echo "==== With output ===="
-	@./apacheUnpacker.exe puppi ipc float $(DATAFILE) /run/user/$$UID/out.arrow
-	@./apacheUnpacker.exe puppi ipc float16 $(DATAFILE) /run/user/$$UID/out.arrow
-	@./apacheUnpacker.exe puppi ipc int $(DATAFILE) /run/user/$$UID/out.arrow
-	@./apacheUnpacker.exe puppi ipc raw64 $(DATAFILE) /run/user/$$UID/out.arrow
-	@./apacheUnpacker.exe tkmu ipc float $(TKMUDATAFILE) /run/user/$$UID/out.arrow
+	@./apacheUnpacker.exe puppi ipc float $(DATAFILE) $(OUTDIR)/out.arrow
+	@./apacheUnpacker.exe puppi ipc float16 $(DATAFILE) $(OUTDIR)/out.arrow
+	@./apacheUnpacker.exe puppi ipc int $(DATAFILE) $(OUTDIR)/out.arrow
+	@./apacheUnpacker.exe puppi ipc raw64 $(DATAFILE) $(OUTDIR)/out.arrow
+	@./apacheUnpacker.exe tkmu ipc float $(TKMUDATAFILE) $(OUTDIR)/out.arrow
 
 run_test_comp: apacheUnpacker.exe
 	@echo "==== With compressed output ===="
-	@./apacheUnpacker.exe puppi ipc float $(DATAFILE) /run/user/$$UID/out.arrow -j 6 -z lz4,4
-	@./apacheUnpacker.exe puppi ipc float16 $(DATAFILE) /run/user/$$UID/out.arrow -j 6 -z lz4,4
-	@./apacheUnpacker.exe puppi ipc int $(DATAFILE) /run/user/$$UID/out.arrow -j 6 -z lz4,4
-	@./apacheUnpacker.exe puppi ipc raw64 $(DATAFILE) /run/user/$$UID/out.arrow -j 6 -z lz4,4
+	@./apacheUnpacker.exe puppi ipc float $(DATAFILE) $(OUTDIR)/out.arrow -j 6 -z lz4,4
+	@./apacheUnpacker.exe puppi ipc float16 $(DATAFILE) $(OUTDIR)/out.arrow -j 6 -z lz4,4
+	@./apacheUnpacker.exe puppi ipc int $(DATAFILE) $(OUTDIR)/out.arrow -j 6 -z lz4,4
+	@./apacheUnpacker.exe puppi ipc raw64 $(DATAFILE) $(OUTDIR)/out.arrow -j 6 -z lz4,4
 
 
 run_test_multi: arrow.exe
-	@for I in $$(seq 1 6); do cp -v $(DATAFILE) /run/user/$$UID/in$${I}.dump; done
-	@./apacheUnpacker.exe puppi ipc float /run/user/$$UID/in{1,2,3,4,5,6}.dump;
-	@./apacheUnpacker.exe puppi ipc float /run/user/$$UID/in{1,2,3,4,5,6}.dump;
-	@./apacheUnpacker.exe puppi ipc float /run/user/$$UID/in{1,2,3,4,5,6}.dump  /run/user/$$UID/out.arrow 
+	@for I in $$(seq 1 6); do cp -v $(DATAFILE) $(OUTDIR)/in$${I}.dump; done
+	@./apacheUnpacker.exe puppi ipc float $(OUTDIR)/in{1,2,3,4,5,6}.dump;
+	@./apacheUnpacker.exe puppi ipc float $(OUTDIR)/in{1,2,3,4,5,6}.dump;
+	@./apacheUnpacker.exe puppi ipc float $(OUTDIR)/in{1,2,3,4,5,6}.dump  $(OUTDIR)/out.arrow 

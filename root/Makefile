@@ -3,6 +3,7 @@ CCFLAGS = -W -Wall -Wno-unused-variable -Ofast -march=native   $(shell root-conf
 LIBS = -lstdc++ $(shell root-config --ldflags --libs) -lROOTNTuple
 DATAFILE ?= data/Puppi.dump
 TKMUDATAFILE ?= data/TkMuons_TM18.dump
+OUTDIR ?= /run/user/$$UID
 
 ifdef VDT_INCLUDE_DIR
 	CCFLAGS += -I$(VDT_INCLUDE_DIR)
@@ -11,18 +12,19 @@ ifdef VDT_LIBRARY
 	LIBS += -L$(dir $(VDT_LIBRARY))
 endif
 
-.PHONY: clean env format run_tests run_test_speed run_test_comp run_test_multi run_test_tkmu 
+.PHONY: clean format run_tests run_test_speed run_test_comp run_test_multi run_test_tkmu 
 
 TARGETS := librootUnpacker.so rootUnpacker.exe
-ifneq ($(strip $(TBB)),)
+ifdef TBB
 	TARGETS += liveUnpacker.exe
 endif
 all: $(TARGETS)
 
+vpath %.so . ..
 BASE_INC := ../unpack.h  ../UnpackerBase.h
-BASE_LIB := ../libunpackerBase.so
-../libunpackerBase.so: ../UnpackerBase.cc $(BASE_INC)
-	cd .. && $(MAKE) libunpackerBase.so
+BASE_LIB := libunpackerBase.so
+$(BASE_LIB): ../UnpackerBase.cc $(BASE_INC)
+	cd .. && $(MAKE) $@
 
 TREE_UNPACKER_SRC := $(wildcard *TTreeUnpacker*.cc)
 TREE_UNPACKER_INC := $(TREE_UNPACKER_SRC:.cc=.h)
@@ -36,17 +38,19 @@ RNTUPLE_UNPACKER_OBJ := $(RNTUPLE_UNPACKER_SRC:.cc=.o)
 $(RNTUPLE_UNPACKER_OBJ): %.o: %.cc %.h RNTupleUnpackerBase.h $(BASE_INC) 
 	$(CC) -fPIC $(CCFLAGS) -c $< -o $@
 
+ALLOBJ := RootUnpackMaker.o $(RNTUPLE_UNPACKER_OBJ) $(TREE_UNPACKER_OBJ)
+
 RootUnpackMaker.o : RootUnpackMaker.cc RootUnpackMaker.h  $(TREE_UNPACKER_INC) $(RNTUPLE_UNPACKER_INC) $(BASE_INC)
 	$(CC) -fPIC $(CCFLAGS) -c $< -o $@
 
-librootUnpacker.so: RootUnpackMaker.o $(RNTUPLE_UNPACKER_OBJ) $(TREE_UNPACKER_OBJ) $(BASE_LIB)
-	$(CC) -shared $(CCFLAGS) $(LIBS) $^ -L.. -lunpackerBase -o $@
+librootUnpacker.so: $(ALLOBJ) -lunpackerBase
+	$(CC) -shared $(CCFLAGS) $(LIBS) -L.. $(ALLOBJ)  -lunpackerBase -o $@
 
-rootUnpacker.exe: RootUnpackMain.cc librootUnpacker.so
-	$(CC) $(CCFLAGS) $(LIBS) $^ -L.. -L. -lunpackerBase -lrootUnpacker -o $@
+rootUnpacker.exe: RootUnpackMain.cc -lunpackerBase -lrootUnpacker
+	$(CC) $(CCFLAGS) $(LIBS) $< -L.. -L. -lunpackerBase -lrootUnpacker -o $@
 
-liveUnpacker.exe: liveUnpacker.cc librootUnpacker.so
-	$(CC) $(CCFLAGS) $(LIBS) $^ -L.. -L. -lunpackerBase -lrootUnpacker -I$(TBB)/include -ltbb -o $@
+liveUnpacker.exe: liveUnpacker.cc -lunpackerBase -lrootUnpacker
+	$(CC) $(CCFLAGS) $(LIBS) $< -L.. -L. -lunpackerBase -lrootUnpacker -I$(TBB)/include -ltbb -o $@
 
 format:
 	@clang-format -i *.h *.cc
@@ -75,45 +79,45 @@ run_test_speed: rootUnpacker.exe
 	@./rootUnpacker.exe puppi ttree int $(DATAFILE)
 	@./rootUnpacker.exe puppi ttree float $(DATAFILE)
 	@echo "==== With output ===="
-	@./rootUnpacker.exe puppi ttree raw64 $(DATAFILE) /run/user/$$UID/out.root
-	@./rootUnpacker.exe puppi ttree int $(DATAFILE) /run/user/$$UID/out.root
-	@./rootUnpacker.exe puppi ttree float $(DATAFILE) /run/user/$$UID/out.root
-	@./rootUnpacker.exe puppi ttree float24 $(DATAFILE) /run/user/$$UID/out.root
-	@./rootUnpacker.exe puppi rntuple raw64 $(DATAFILE)  /run/user/$$UID/out.root
-	@./rootUnpacker.exe puppi rntuple ints $(DATAFILE)  /run/user/$$UID/out.root
-	@./rootUnpacker.exe puppi rntuple coll_int $(DATAFILE)  /run/user/$$UID/out.root
-	@./rootUnpacker.exe puppi rntuple floats $(DATAFILE)  /run/user/$$UID/out.root
-	@./rootUnpacker.exe puppi rntuple coll_float $(DATAFILE)  /run/user/$$UID/out.root 
+	@./rootUnpacker.exe puppi ttree raw64 $(DATAFILE) $(OUTDIR)/out.root
+	@./rootUnpacker.exe puppi ttree int $(DATAFILE) $(OUTDIR)/out.root
+	@./rootUnpacker.exe puppi ttree float $(DATAFILE) $(OUTDIR)/out.root
+	@./rootUnpacker.exe puppi ttree float24 $(DATAFILE) $(OUTDIR)/out.root
+	@./rootUnpacker.exe puppi rntuple raw64 $(DATAFILE)  $(OUTDIR)/out.root
+	@./rootUnpacker.exe puppi rntuple ints $(DATAFILE)  $(OUTDIR)/out.root
+	@./rootUnpacker.exe puppi rntuple coll_int $(DATAFILE)  $(OUTDIR)/out.root
+	@./rootUnpacker.exe puppi rntuple floats $(DATAFILE)  $(OUTDIR)/out.root
+	@./rootUnpacker.exe puppi rntuple coll_float $(DATAFILE)  $(OUTDIR)/out.root 
 
 
 run_test_multi: rootUnpacker.exe
-	@for I in $$(seq 1 6); do cp -v $(DATAFILE) /run/user/$$UID/in$${I}.dump; done
-	@./rootUnpacker.exe puppi ttree float /run/user/$$UID/in{1,2,3,4,5,6}.dump;
-	@./rootUnpacker.exe puppi ttree float /run/user/$$UID/in{1,2,3,4,5,6}.dump;
-	@./rootUnpacker.exe puppi rntuple coll_float /run/user/$$UID/in{1,2,3,4,5,6}.dump
-	@./rootUnpacker.exe puppi ttree float  /run/user/$$UID/in{1,2,3,4,5,6}.dump /run/user/$$UID/out.root
-	@./rootUnpacker.exe puppi rntuple floats /run/user/$$UID/in{1,2,3,4,5,6}.dump /run/user/$$UID/out.root
-	@./rootUnpacker.exe puppi rntuple coll_float /run/user/$$UID/in{1,2,3,4,5,6}.dump /run/user/$$UID/out.root
+	@for I in $$(seq 1 6); do cp -v $(DATAFILE) $(OUTDIR)/in$${I}.dump; done
+	@./rootUnpacker.exe puppi ttree float $(OUTDIR)/in{1,2,3,4,5,6}.dump;
+	@./rootUnpacker.exe puppi ttree float $(OUTDIR)/in{1,2,3,4,5,6}.dump;
+	@./rootUnpacker.exe puppi rntuple coll_float $(OUTDIR)/in{1,2,3,4,5,6}.dump
+	@./rootUnpacker.exe puppi ttree float  $(OUTDIR)/in{1,2,3,4,5,6}.dump $(OUTDIR)/out.root
+	@./rootUnpacker.exe puppi rntuple floats $(OUTDIR)/in{1,2,3,4,5,6}.dump $(OUTDIR)/out.root
+	@./rootUnpacker.exe puppi rntuple coll_float $(OUTDIR)/in{1,2,3,4,5,6}.dump $(OUTDIR)/out.root
 
 run_test_comp: rootUnpacker.exe
 	@echo "==== With LZ4 output ===="
-	@./rootUnpacker.exe puppi ttree int $(DATAFILE) /run/user/$$UID/out.root -j 6 -z lz4,4
-	@./rootUnpacker.exe puppi rntuple ints $(DATAFILE)  /run/user/$$UID/out.root -j 6 -z lz4,4
-	@./rootUnpacker.exe puppi rntuple coll_int $(DATAFILE)  /run/user/$$UID/out.root -j 6 -z lz4,4
-	@./rootUnpacker.exe puppi ttree float $(DATAFILE) /run/user/$$UID/out.root -j 6 -z lz4,4
-	@./rootUnpacker.exe puppi ttree float24 $(DATAFILE) /run/user/$$UID/out.root -j 6 -z lz4,4
-	@./rootUnpacker.exe puppi rntuple floats $(DATAFILE)  /run/user/$$UID/out.root -j 6 -z lz4,4
-	@./rootUnpacker.exe puppi rntuple coll_float $(DATAFILE)  /run/user/$$UID/out.root -j 6 -z lz4,4
+	@./rootUnpacker.exe puppi ttree int $(DATAFILE) $(OUTDIR)/out.root -j 6 -z lz4,4
+	@./rootUnpacker.exe puppi rntuple ints $(DATAFILE)  $(OUTDIR)/out.root -j 6 -z lz4,4
+	@./rootUnpacker.exe puppi rntuple coll_int $(DATAFILE)  $(OUTDIR)/out.root -j 6 -z lz4,4
+	@./rootUnpacker.exe puppi ttree float $(DATAFILE) $(OUTDIR)/out.root -j 6 -z lz4,4
+	@./rootUnpacker.exe puppi ttree float24 $(DATAFILE) $(OUTDIR)/out.root -j 6 -z lz4,4
+	@./rootUnpacker.exe puppi rntuple floats $(DATAFILE)  $(OUTDIR)/out.root -j 6 -z lz4,4
+	@./rootUnpacker.exe puppi rntuple coll_float $(DATAFILE)  $(OUTDIR)/out.root -j 6 -z lz4,4
 	@echo "==== With ZSTD output ===="
-	@./rootUnpacker.exe puppi ttree float $(DATAFILE) /run/user/$$UID/out.root -j 6 -z zstd,5
-	@./rootUnpacker.exe puppi rntuple coll_float $(DATAFILE)  /run/user/$$UID/out.root -j 6 -z zstd,5
+	@./rootUnpacker.exe puppi ttree float $(DATAFILE) $(OUTDIR)/out.root -j 6 -z zstd,5
+	@./rootUnpacker.exe puppi rntuple coll_float $(DATAFILE)  $(OUTDIR)/out.root -j 6 -z zstd,5
 
 run_test_tkmu: rootUnpacker.exe
 	@echo "==== With uncompressed output  ===="
-	@./rootUnpacker.exe tkmu ttree int $(TKMUDATAFILE) /run/user/$$UID/out.root
-	@./rootUnpacker.exe tkmu ttree float $(TKMUDATAFILE) /run/user/$$UID/out.root
-	@./rootUnpacker.exe tkmu rntuple floats $(TKMUDATAFILE) /run/user/$$UID/out.root
-	@./rootUnpacker.exe tkmu rntuple coll_float $(TKMUDATAFILE) /run/user/$$UID/out.root
+	@./rootUnpacker.exe tkmu ttree int $(TKMUDATAFILE) $(OUTDIR)/out.root
+	@./rootUnpacker.exe tkmu ttree float $(TKMUDATAFILE) $(OUTDIR)/out.root
+	@./rootUnpacker.exe tkmu rntuple floats $(TKMUDATAFILE) $(OUTDIR)/out.root
+	@./rootUnpacker.exe tkmu rntuple coll_float $(TKMUDATAFILE) $(OUTDIR)/out.root
 	@echo "==== With LZ4 output ===="
-	@./rootUnpacker.exe tkmu ttree int $(TKMUDATAFILE) /run/user/$$UID/out.root -j 6 -z lz4,4
-	@./rootUnpacker.exe tkmu ttree float $(TKMUDATAFILE) /run/user/$$UID/out.root -j 6 -z lz4,4
+	@./rootUnpacker.exe tkmu ttree int $(TKMUDATAFILE) $(OUTDIR)/out.root -j 6 -z lz4,4
+	@./rootUnpacker.exe tkmu ttree float $(TKMUDATAFILE) $(OUTDIR)/out.root -j 6 -z lz4,4

@@ -1,11 +1,20 @@
 CC = c++
 CCFLAGS = -ggdb --std=c++17 -W -Wall -Wno-unused-variable -Ofast -march=native   $(shell root-config --cflags)
 LIBS = -lstdc++ $(shell root-config --ldflags --libs) -lROOTNTuple  
-LCG ?= /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt
+ifdef VDT_INCLUDE_DIR
+	CCFLAGS += -I$(VDT_INCLUDE_DIR)
+endif
+ifdef VDT_LIBRARY
+	LIBS += -L$(dir $(VDT_LIBRARY))
+endif
 
-.PHONY: clean env format 
+.PHONY: clean format 
 
-all: run.exe
+TARGETS := run.exe
+ifdef TBB
+	TARGETS += liveAnalysis.exe
+endif
+all: $(TARGETS)
 
 ANALYSES_SRC := analysis.cc w3piExample2022.cc
 ANALYSES_OBJ := $(ANALYSES_SRC:.cc=.o)
@@ -20,15 +29,6 @@ run.exe: run.cc $(ANALYSES_OBJ)
 liveAnalysis.exe: liveAnalysis.cc $(ANALYSES_OBJ)
 	$(CC) $(CCFLAGS) $(LIBS) $^ -I$(LCG)/include -ltbb -o $@
 
-env:
-	@echo "source /cvmfs/sft.cern.ch/lcg/views/LCG_104/x86_64-centos8-gcc11-opt/setup.sh"
-
-envdev:
-	@echo "source /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt/setup.sh"
-
-env9dev:
-	@echo "source /cvmfs/sft.cern.ch/lcg/views/dev3/latest/x86_64-el9-gcc13-opt/setup.sh"
-
 format:
 	@clang-format -i *.cc *.h
 
@@ -36,16 +36,16 @@ clean:
 	@rm *.o *.exe *.root *.raw  2> /dev/null || true
 
 testInput_TTree.root:
-	../treeUnpacker.exe puppi float ../data/Puppi.dump  testInput_TTree.root
+	../rootUnpacker.exe puppi ttree float ../data/Puppi.dump  testInput_TTree.root
 
 testInput_TTree_int.root:
-	../treeUnpacker.exe puppi int ../data/Puppi.dump  testInput_TTree_int.root
+	../rootUnpacker.exe puppi ttree int ../data/Puppi.dump  testInput_TTree_int.root
 
 testInput_RNTuple_coll.root:
-	../rntupleUnpacker.exe puppi coll_float ../data/Puppi.dump  testInput_RNTuple_coll.root
+	../rootUnpacker.exe puppi rntuple coll_float ../data/Puppi.dump  testInput_RNTuple_coll.root
 
 testInput_RNTuple_vec.root:
-	../rntupleUnpacker.exe puppi floats ../data/Puppi.dump  testInput_RNTuple_vec.root
+	../rootUnpacker.exe puppi rntuple floats ../data/Puppi.dump  testInput_RNTuple_vec.root
 
 run_tests: run.exe testInput_TTree.root testInput_TTree_int.root testInput_RNTuple_coll.root testInput_RNTuple_vec.root
 	./run.exe w3piExample2022 loose testInput_TTree.root -f tree
@@ -64,20 +64,22 @@ run_tests_output: run.exe testInput_TTree.root testInput_TTree_int.root testInpu
 	./run.exe w3piExample2022 loose testInput_RNTuple_coll.root -f rntuple_coll -o rawhisto histo_fromRN.raw
 
 
-DATAFILE ?= data/Puppi.dump
-TREEFILE ?= /run/user/$$UID/ttree.root
-TREE24FILE ?= /run/user/$$UID/ttree_24.root
-TREEINTFILE ?= /run/user/$$UID/ttree_int.root
-RNTCFILE ?= /run/user/$$UID/rnt_coll.root
-RNTVFILE ?= /run/user/$$UID/rnt_vec.root
+DATAFILE ?= ../data/Puppi.dump
+TREEFILE = $(OUTDIR)/ttree.root
+TREE24FILE = $(OUTDIR)/ttree_24.root
+TREEINTFILE = $(OUTDIR)/ttree_int.root
+RNTCFILE = $(OUTDIR)/rnt_coll.root
+RNTVFILE = $(OUTDIR)/rnt_vec.root
+RNTVIFILE = $(OUTDIR)/rnt_vec_int.root
 
 run_test_speed: ./run.exe
 	@echo "=== Create inputs ==="
-	../treeUnpacker.exe puppi float $(DATAFILE) $(TREEFILE) > /dev/null
-	../treeUnpacker.exe puppi float24 $(DATAFILE) $(TREE24FILE) > /dev/null
-	../treeUnpacker.exe puppi int $(DATAFILE) $(TREEINTFILE) > /dev/null
-	../rntupleUnpacker.exe puppi coll_float $(DATAFILE) $(RNTCFILE) > /dev/null
-	../rntupleUnpacker.exe puppi floats $(DATAFILE) $(RNTVFILE) > /dev/null
+	../rootUnpacker.exe puppi ttree float $(DATAFILE) $(TREEFILE) > /dev/null
+	../rootUnpacker.exe puppi ttree float24 $(DATAFILE) $(TREE24FILE) > /dev/null
+	../rootUnpacker.exe puppi ttree int $(DATAFILE) $(TREEINTFILE) > /dev/null
+	../rootUnpacker.exe puppi rntuple coll_float $(DATAFILE) $(RNTCFILE) > /dev/null
+	../rootUnpacker.exe puppi rntuple floats $(DATAFILE) $(RNTVFILE) > /dev/null
+	../rootUnpacker.exe puppi rntuple ints $(DATAFILE) $(RNTVIFILE) > /dev/null
 	@echo "=== W->3pi 2022 NO OUTPUT ==="
 	./run.exe w3piExample2022 loose $(TREEFILE) -f tree 
 	./run.exe w3piExample2022 loose $(TREE24FILE) -f tree 
@@ -89,9 +91,10 @@ run_test_speed: ./run.exe
 	./run.exe w3piExample2022 loose $(RNTCFILE) -f rntuple_coll -o rawhisto histo_fromRN.raw
 	./run.exe w3piExample2022 loose $(RNTVFILE) -f rntuple_vec -o rawhisto histo_fromRNv.raw
 	@echo "=== W->3pi 2022 SNAPSHOT ==="
-	./run.exe w3piExample2022 loose $(TREEFILE) -f tree -o snapshot /run/user/$$UID/snapshot.root
-	./run.exe w3piExample2022 loose $(TREE24FILE) -f tree   -o snapshot /run/user/$$UID/snapshot24.root
-	./run.exe w3piExample2022 loose $(TREEINTFILE) -f tree_int  -o snapshot /run/user/$$UID/snapshotInt.root
-	./run.exe w3piExample2022 loose $(RNTCFILE) -f rntuple_coll -o snapshot /run/user/$$UID/snapshot_fromRN.root
-	./run.exe w3piExample2022 loose $(RNTVFILE) -f rntuple_vec -o snapshot /run/user/$$UID/snapshot_fromRNv.root
+	./run.exe w3piExample2022 loose $(TREEFILE) -f tree -o snapshot $(OUTDIR)/snapshot.root
+	./run.exe w3piExample2022 loose $(TREE24FILE) -f tree   -o snapshot $(OUTDIR)/snapshot24.root
+	./run.exe w3piExample2022 loose $(TREEINTFILE) -f tree_int  -o snapshot $(OUTDIR)/snapshotInt.root
+	./run.exe w3piExample2022 loose $(RNTCFILE) -f rntuple_coll -o snapshot $(OUTDIR)/snapshot_fromRN.root
+	./run.exe w3piExample2022 loose $(RNTVFILE) -f rntuple_vec -o snapshot $(OUTDIR)/snapshot_fromRNv.root
+	./run.exe w3piExample2022 loose $(RNTVIFILE) -f rntuple_vec_int -o snapshot $(OUTDIR)/snapshot_fromRNv.root
 

@@ -188,7 +188,7 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
                                       "Triplet_Mass"};
   bool isMC = false;
   bool isInt = (format.length() >= 4 && format.substr(format.length() - 4) == "_int");
-  if (format == "tree" || format == "tree_int" || format == "rntuple_vec") {
+  if (format == "tree" || format == "tree_int" || format == "rntuple_vec" || format == "rntuple_vec_int") {
     c_pt = "Puppi_pt";
     c_eta = "Puppi_eta";
     c_phi = "Puppi_phi";

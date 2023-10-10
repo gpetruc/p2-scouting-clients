@@ -71,8 +71,11 @@ public:
   unsigned int fillOrbit(uint32_t orbitno, uint64_t *begin, uint64_t *end) {
     uint64_t *ptr = begin;
     unsigned int nevents = data_->events.size();
-    for (unsigned int bx = offs_; bx < NBX; bx += tmux_) {
-      const auto &item = data_->events[rnd_() % nevents];
+    if (offs_ > 0) rnd_.discard(offs_-1);
+    for (unsigned int bx = offs_; bx < NBX;  bx += tmux_) {
+      unsigned int irnd = rnd_();
+      //if (tmux_ != 1) rnd_.discard(tmux_-1); // align random numbers (but increase CPU usage)
+      const auto &item = data_->events[irnd % nevents];
       (*ptr) = (0b10llu << 62) | (uint64_t(orbitno) << 24) | (bx << 12) | item.size;
       assert(ptr + item.size + 1 < end);
       ptr = std::copy_n(item.payload.begin(), item.size, ptr + 1);

@@ -110,9 +110,17 @@ public:
     return ret;
   }
   DTH_Header256 readDTH256(int sockfd, uint8_t out[32], bool checkStart = false, bool checkEnd = false) {
-    int n = read(sockfd, reinterpret_cast<char *>(out), 32);
-    assert(n <= 0 || n == 32);
-    bool ok = (n == 32);
+    int t = 32, i = 0;
+    bool ok = true;
+    do {
+      int n = read(sockfd, reinterpret_cast<char *>(&out[i]), t);
+      if (n <= 0) {
+        ok = false;
+        break;
+      }
+      t -= n;
+      i += n;
+    } while (t > 0);
     return parseDTH256(ok, out, checkStart, checkEnd);
   }
   DTH_Header256 parseDTH256(bool ok, const uint8_t out[32], bool checkStart = false, bool checkEnd = false) {
@@ -1102,7 +1110,7 @@ public:
         readBytes += totlen256 << 5;
         if (!fout_.is_open() || oh.orbit % orbitsPerFile_ == orbitMux_)
           newFile(oh.orbit);
-        if (prescale_ != 0 && oh.orbit % prescale_ == 1) {
+        if (prescale_ != 0 && (prescale_ == 1 || oh.orbit % prescale_ == orbitMux_)) {
           fout_.write(reinterpret_cast<char *>(orbit_buff), totlen256 << 5);
           wroteBytes += totlen256 << 5;
         }
@@ -1339,8 +1347,10 @@ void start_and_run(std::unique_ptr<CheckerBase> &&checker,
       return;
     }
     int ret = checker->run(sourcefd);
-    if (ret)
+    if (ret) {
       errors->fetch_add(1);
+      if (!keep_running) _exit(1);
+    }
     checker->clear();
   } while (keep_running);
   printf("Done in client %d\n", client);

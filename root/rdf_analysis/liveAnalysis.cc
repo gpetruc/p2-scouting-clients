@@ -171,7 +171,7 @@ private:
             if (!(event->mask & IN_ISDIR)) {
               std::string fname = event->name;
               if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".root" &&
-                  (fname.length() < 9 || fname.substr(fname.length() - 9) == ".tmp.root")) {
+                  (fname.length() < 9 || fname.substr(fname.length() - 9) != ".tmp.root")) {
                 std::string in(from_ + "/" + fname);
                 if (std::filesystem::exists(in)) {
                   std::filesystem::rename(in, in + ".taken");

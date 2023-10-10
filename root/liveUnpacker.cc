@@ -86,10 +86,9 @@ public:
   void operator()(Token token) const {
     if (token.inputs.empty())
       return;
-    if (!unpacker_)
-      unpacker_ = RootUnpackMaker::make(spec_);
+    std::unique_ptr<UnpackerBase> unpacker = RootUnpackMaker::make(spec_);
     printf("Unpack %s[#%d] -> %s\n", token.inputs.front().c_str(), int(token.inputs.size()), token.output.c_str());
-    auto report = unpacker_->unpackFiles(token.inputs, token.output);
+    auto report = unpacker->unpackFiles(token.inputs, token.output);
     printReport(report);
     totals_->add(report);
     for (const auto &in : token.inputs)
@@ -102,7 +101,6 @@ public:
 
 private:
   RootUnpackMaker::Spec spec_;
-  mutable std::unique_ptr<UnpackerBase> unpacker_;
   mutable Totals *totals_;
   const bool deleteAfterwards_;
 };
