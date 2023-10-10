@@ -12,7 +12,9 @@
 
 #include "ROOT/RNTupleDS.hxx"
 #include <ROOT/RSnapshotOptions.hxx>
+#ifdef USE_ARROW
 #include "RArrowDS2.hxx"
+#endif
 #include <chrono>
 
 w3piExample2022::w3piExample2022(const std::string &cutChoice, bool verbose) : verbose_(verbose) {
@@ -206,7 +208,7 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
     c_dxy = "L1Puppi_dxy";
     c_z0 = "L1Puppi_z0";
     c_wpuppi = "L1Puppi_wpuppi";
-  } else if (format == "rntuple_coll" || format == "arrow") {
+  } else if (format == "rntuple_coll" || format.find("arrow") == 0) {
     c_pt = "Puppi.pt";
     c_eta = "Puppi.eta";
     c_phi = "Puppi.phi";
@@ -269,6 +271,39 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
                   ROOT::RVec<unsigned>,  // Triplet_Index
                   float                  // Triplet_mass
                   >("Events", outFile.c_str(), outputs, opts);
+    } else if (format.find("arrow") == 0) {
+      auto d3 = d2.Alias("nPuppi", "#Puppi");
+      outputs = {"run",
+                 "orbit",
+                 "bx",
+                 "good",
+                 "nPuppi",
+                 "Puppi.pt",
+                 "Puppi.eta",
+                 "Puppi.phi",
+                 "Puppi.pdgId",
+                 "Puppi.z0",
+                 "Puppi.dxy",
+                 "Puppi.wpuppi",
+                 "Puppi.quality",
+                 "Triplet_Index",
+                 "Triplet_Mass"};
+      d3.Snapshot<uint16_t,  // run
+                  uint32_t,  // orbit
+                  uint16_t,  // bx
+                  bool,      // good
+                  uint16_t,              // nPuppi
+                  ROOT::RVec<float>,     // Puppi_pt (RNTuple reads them as RVec)
+                  ROOT::RVec<float>,     // Puppi_eta
+                  ROOT::RVec<float>,     // Puppi_phi
+                  ROOT::RVec<int16_t>,   // Puppi_pdgId
+                  ROOT::RVec<float>,     // Puppi_z0
+                  ROOT::RVec<float>,     // Puppi_dxy
+                  ROOT::RVec<float>,     // Puppi_wpuppi
+                  ROOT::RVec<uint8_t>,   // Puppi_quality
+                  ROOT::RVec<unsigned>,  // Triplet_Index
+                  float                  // Triplet_mass
+                  >("Events", outFile.c_str(), outputs, opts);
     } else {
       d2.Snapshot<uint16_t,              // run
                   uint32_t,              // orbit
@@ -317,11 +352,18 @@ rdfAnalysis::Report w3piExample2022::run(const std::string &format,
     ROOT::RDataFrame d = ROOT::RDF::Experimental::FromRNTuple("Events", infiles.front());
     //d.Describe().Print();
     analyze(d, format, ntot, npre, npass, outformat, outfile);
-  } else if (format.find("arrow") == 0) {
+#ifdef USE_ARROW
+  } else if (format.find("arrow_file") == 0) {
+    assert(infiles.size() == 1);
+    ROOT::RDataFrame d = ROOT::RDF::FromArrowIPCFile(infiles.front(), {});
+    //d.Describe().Print();
+    analyze(d, format, ntot, npre, npass, outformat, outfile);
+  } else if (format.find("arrow_stream") == 0) {
     assert(infiles.size() == 1);
     ROOT::RDataFrame d = ROOT::RDF::FromArrowIPCStream(infiles.front(), {});
-    d.Describe().Print();
+    //d.Describe().Print();
     analyze(d, format, ntot, npre, npass, outformat, outfile);
+#endif    
   } else {
     ROOT::RDataFrame d("Events", infiles);
     //d.Describe().Print();
