@@ -25,7 +25,7 @@ bool is_output_fname(const std::string &fname) {
   if (fname.length() > 4 && fname.substr(fname.length() - 4) == ".ipc")
     return true;
   if (fname.length() > 8 && fname.substr(fname.length() - 8) == ".parquet")
-    return true;    
+    return true;
   return false;
 }
 

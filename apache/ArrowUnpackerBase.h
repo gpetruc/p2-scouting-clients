@@ -7,7 +7,7 @@
 #include <arrow/array.h>
 #include <arrow/array/builder_primitive.h>
 #ifdef USE_PARQUET
-#include <parquet/arrow/writer.h>
+  #include <parquet/arrow/writer.h>
 #endif
 
 class ArrowUnpackerBase : public UnpackerBase {
@@ -42,9 +42,11 @@ public:
   }
 
   void writeRecordBatch(const arrow::RecordBatch &batch) {
-    if (batchWriter_) batchWriter_->WriteRecordBatch(batch);
+    if (batchWriter_)
+      batchWriter_->WriteRecordBatch(batch);
 #ifdef USE_PARQUET
-    else if (parquetWriter_) parquetWriter_->WriteRecordBatch(batch);
+    else if (parquetWriter_)
+      parquetWriter_->WriteRecordBatch(batch);
 #endif
   }
 
@@ -61,7 +63,7 @@ protected:
 #ifdef USE_PARQUET
   // for Parquet files
   std::shared_ptr<parquet::arrow::FileWriter> parquetWriter_;
-#endif  
+#endif
 
   //
   unsigned long int entriesInBatch_, batches_;

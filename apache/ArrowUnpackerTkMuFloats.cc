@@ -1,7 +1,9 @@
 #include "ArrowUnpackerTkMuFloats.h"
 #include "../unpack.h"
 
-ArrowUnpackerTkMuFloats::ArrowUnpackerTkMuFloats(unsigned int batchsize, ApacheUnpackMaker::Spec::FileKind fileKind, bool float16)
+ArrowUnpackerTkMuFloats::ArrowUnpackerTkMuFloats(unsigned int batchsize,
+                                                 ApacheUnpackMaker::Spec::FileKind fileKind,
+                                                 bool float16)
     : ArrowUnpackerBase(batchsize, fileKind),
       float16_(float16),
       floatType_(float16_ ? arrow::float16() : arrow::float32()),
@@ -14,8 +16,15 @@ ArrowUnpackerTkMuFloats::ArrowUnpackerTkMuFloats(unsigned int batchsize, ApacheU
       chargeField_(arrow::field("charge", arrow::int8())),
       qualityField_(arrow::field("quality", arrow::uint8())),
       isolationField_(arrow::field("isolation", arrow::uint8())),
-      tkmuType_(arrow::struct_(
-          {ptField_, etaField_, phiField_, chargeField_, z0Field_, d0Field_, qualityField_, isolationField_, betaField_})),
+      tkmuType_(arrow::struct_({ptField_,
+                                etaField_,
+                                phiField_,
+                                chargeField_,
+                                z0Field_,
+                                d0Field_,
+                                qualityField_,
+                                isolationField_,
+                                betaField_})),
       tkmusType_(arrow::list(tkmuType_)),
       tkmuField_(arrow::field("TkMu", tkmusType_)),
       offsets_(1, 0) {
@@ -26,7 +35,7 @@ void ArrowUnpackerTkMuFloats::unpackAndCommitBatch() {
   // make tally
   offsets_.resize(1);
   for (auto n : nwords_) {
-    int nmu = (n*2)/3;
+    int nmu = (n * 2) / 3;
     offsets_.emplace_back(offsets_.back() + nmu);
   }
   unsigned int nalltkmu = offsets_.back();
@@ -38,19 +47,19 @@ void ArrowUnpackerTkMuFloats::unpackAndCommitBatch() {
   quality_.resize(nalltkmu);
   unsigned int imu = 0, iword = 0;
   for (auto n : nwords_) {
-      uint16_t nmu;
-      decode_gmt_tkmu(n,
-                  &data_[iword],
-                  nmu,
-                  &pt_[imu],
-                  &eta_[imu],
-                  &phi_[imu],
-                  &charge_[imu],
-                  &z0_[imu],
-                  &d0_[imu],
-                  &quality_[imu],
-                  &isolation_[imu],
-                  &beta_[imu]);
+    uint16_t nmu;
+    decode_gmt_tkmu(n,
+                    &data_[iword],
+                    nmu,
+                    &pt_[imu],
+                    &eta_[imu],
+                    &phi_[imu],
+                    &charge_[imu],
+                    &z0_[imu],
+                    &d0_[imu],
+                    &quality_[imu],
+                    &isolation_[imu],
+                    &beta_[imu]);
     iword += n;
     imu += nmu;
   }

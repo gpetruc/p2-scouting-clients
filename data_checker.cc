@@ -1349,7 +1349,8 @@ void start_and_run(std::unique_ptr<CheckerBase> &&checker,
     int ret = checker->run(sourcefd);
     if (ret) {
       errors->fetch_add(1);
-      if (!keep_running) _exit(1);
+      if (!keep_running)
+        _exit(1);
     }
     checker->clear();
   } while (keep_running);

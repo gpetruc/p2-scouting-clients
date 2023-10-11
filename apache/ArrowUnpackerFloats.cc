@@ -1,7 +1,9 @@
 #include "ArrowUnpackerFloats.h"
 #include "../unpack.h"
 
-ArrowUnpackerFloats::ArrowUnpackerFloats(unsigned int batchsize, ApacheUnpackMaker::Spec::FileKind fileKind, bool float16)
+ArrowUnpackerFloats::ArrowUnpackerFloats(unsigned int batchsize,
+                                         ApacheUnpackMaker::Spec::FileKind fileKind,
+                                         bool float16)
     : ArrowUnpackerBase(batchsize, fileKind),
       float16_(float16),
       floatType_(float16_ ? arrow::float16() : arrow::float32()),

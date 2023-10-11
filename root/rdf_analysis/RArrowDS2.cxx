@@ -164,7 +164,35 @@ namespace ROOT {
         }
       };
 
-      /// Helper to get the contents of a given column
+      template <typename RootType, typename ArrowArrayType>
+      class RArrowCopyListReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
+      private:
+        std::shared_ptr<arrow::ListArray> fListArray;
+        std::shared_ptr<ArrowArrayType> fArray;
+        Long64_t fEntry;
+        ROOT::RVec<RootType> fCache;
+
+      public:
+        RArrowCopyListReader(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
+            : RArrowColumnReaderBase(source, addr), fEntry(std::numeric_limits<Long64_t>::max()) {}
+        virtual ~RArrowCopyListReader() {}
+        void *GetImpl(Long64_t entry) override {
+          if (entry != fEntry) {
+            if (maybeFetch(entry, fListArray))
+              fArray = std::static_pointer_cast<ArrowArrayType>(fListArray->values());
+            int64_t arrowEntry = entry - fFirstEntry;
+            int64_t valueEntry = fListArray->value_offset(arrowEntry);
+            unsigned int length = fListArray->value_length(arrowEntry);
+            fCache.resize(length);
+            for (unsigned int i = 0; i < length; ++i, ++valueEntry) {
+              fCache[i] = fArray->Value(valueEntry);
+            }
+            fEntry = entry;
+          }
+          return (void *)(&fCache);
+        }
+      };
+
       /// Helper to get the human readable name of type
       class RDFTypeNameGetter : public ::arrow::TypeVisitor {
       private:
@@ -241,27 +269,6 @@ namespace ROOT {
         using ::arrow::TypeVisitor::Visit;
       };
 
-      /// Helper to determine if a given Column is a supported type.
-      class VerifyValidColumnType : public ::arrow::TypeVisitor {
-      private:
-      public:
-        virtual arrow::Status Visit(const arrow::Int64Type &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::UInt64Type &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::Int32Type &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::UInt32Type &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::Int16Type &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::UInt16Type &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::Int8Type &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::UInt8Type &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::FloatType &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::DoubleType &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::StringType &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::BooleanType &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::ListType &) override { return arrow::Status::OK(); }
-        virtual arrow::Status Visit(const arrow::StructType &) override { return arrow::Status::OK(); }
-        using ::arrow::TypeVisitor::Visit;
-      };
-
       /// Helper to make the necessary reader type.
       class ReaderMaker : public ::arrow::TypeVisitor {
       public:
@@ -316,6 +323,9 @@ namespace ROOT {
         arrow::Status makeC() {
           if (fLevel == 0) {
             fReader = std::make_unique<RArrowCachingScalarReader<RT, AT>>(fSource, *fAddr);
+            return arrow::Status::OK();
+          } else if (fLevel == 1) {
+            fReader = std::make_unique<RArrowCopyListReader<RT, AT>>(fSource, *fAddr);
             return arrow::Status::OK();
           }
           return arrow::Status::NotImplemented("");
@@ -394,6 +404,19 @@ namespace ROOT {
         std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader_;
         std::shared_ptr<arrow::Schema> schema_;
         unsigned int iBatch_, lastBatch_;
+      };
+
+      class ArrowTableSource : public RArrowDS2::RecordBatchSource {
+      public:
+        ArrowTableSource(std::shared_ptr<arrow::Table> table) : table_(table) {}
+        ~ArrowTableSource() override {}
+        std::shared_ptr<arrow::Schema> Schema() override { return table_->schema(); }
+        void Start() override { reader_ = std::make_unique<arrow::TableBatchReader>(table_); }
+        std::shared_ptr<arrow::RecordBatch> Next() override { return *reader_->Next(); }
+
+      private:
+        std::shared_ptr<arrow::Table> table_;
+        std::unique_ptr<arrow::TableBatchReader> reader_;
       };
     }  // namespace Internal
 
@@ -614,10 +637,12 @@ namespace ROOT {
           if (ok.ok()) {
             return maker.result();
           } else {
-            throw std::runtime_error("RArrowDS2 can't make a maker for " + std::string(columnName));
+            throw std::runtime_error("RArrowDS2 can't make a maker for " + std::string(columnName) + " arrow type " +
+                                     type->ToString());
           }
         } else {
-          throw std::runtime_error("RArrowDS2 can't make a type for " + std::string(columnName));
+          throw std::runtime_error("RArrowDS2 can't make a type for " + std::string(columnName) + " arrow type " +
+                                   type->ToString());
         }
       }
     }
@@ -634,13 +659,18 @@ namespace ROOT {
     /// In case columnNames is empty, we use all the columns found in the table
     RDataFrame FromArrowIPCStream(const std::string &fileName, std::vector<std::string> const &columnNames) {
       std::unique_ptr<RArrowDS2::RecordBatchSource> src = std::make_unique<Internal::IPCStreamSource>(fileName);
-      ROOT::RDataFrame tdf(std::make_unique<RArrowDS2>(std::move(src), columnNames));
-      return tdf;
+      ROOT::RDataFrame rdf(std::make_unique<RArrowDS2>(std::move(src), columnNames));
+      return rdf;
     }
     RDataFrame FromArrowIPCFile(const std::string &fileName, std::vector<std::string> const &columnNames) {
       std::unique_ptr<RArrowDS2::RecordBatchSource> src = std::make_unique<Internal::IPCFileSource>(fileName);
-      ROOT::RDataFrame tdf(std::make_unique<RArrowDS2>(std::move(src), columnNames));
-      return tdf;
+      ROOT::RDataFrame rdf(std::make_unique<RArrowDS2>(std::move(src), columnNames));
+      return rdf;
+    }
+    RDataFrame FromArrowTable(std::shared_ptr<arrow::Table> table, std::vector<std::string> const &columnNames) {
+      std::unique_ptr<RArrowDS2::RecordBatchSource> src = std::make_unique<Internal::ArrowTableSource>(table);
+      ROOT::RDataFrame rdf(std::make_unique<RArrowDS2>(std::move(src), columnNames));
+      return rdf;
     }
   }  // namespace RDF
 

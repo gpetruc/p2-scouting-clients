@@ -21,6 +21,7 @@ namespace arrow {
   class Schema;
   class DataType;
   class Array;
+  class Table;
 }  // namespace arrow
 
 namespace ROOT {
@@ -82,6 +83,7 @@ namespace ROOT {
 
     RDataFrame FromArrowIPCStream(const std::string &fileName, std::vector<std::string> const &columnNames);
     RDataFrame FromArrowIPCFile(const std::string &fileName, std::vector<std::string> const &columnNames);
+    RDataFrame FromArrowTable(std::shared_ptr<arrow::Table> table, std::vector<std::string> const &columnNames);
 
   }  // namespace RDF
 

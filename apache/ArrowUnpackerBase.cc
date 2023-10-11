@@ -27,7 +27,8 @@ void ArrowUnpackerBase::bookOutput(const std::string &out) {
   if (!out.empty()) {
     assert(fout_.empty());
     fout_ = out;
-    if (fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCStream || fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCFile) {
+    if (fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCStream ||
+        fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCFile) {
       if (out.length() <= 7 || out.substr(out.length() - 6) != ".arrow") {
         fout_ = out + ".arrow";
       }
@@ -39,7 +40,8 @@ void ArrowUnpackerBase::bookOutput(const std::string &out) {
 #endif
     }
     outputFile_ = *arrow::io::FileOutputStream::Open(fout_);
-    if (fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCStream || fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCFile) {
+    if (fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCStream ||
+        fileKind_ == ApacheUnpackMaker::Spec::FileKind::IPCFile) {
       arrow::ipc::IpcWriteOptions ipcWriteOptions = arrow::ipc::IpcWriteOptions::Defaults();
       if (compressionMethod_ == "lz4") {
         ipcWriteOptions.codec = *arrow::util::Codec::Create(arrow::Compression::LZ4_FRAME, compressionLevel_);

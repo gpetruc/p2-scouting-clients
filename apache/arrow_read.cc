@@ -98,10 +98,15 @@ Status run_ipc(const std::string &type, const char *fname) {
     }
   }
   std::shared_ptr<arrow::RecordBatch> rrb;
+  bool first = true;
   if (streamreader) {
     for (auto stat = streamreader->ReadNext(&rrb); stat.ok(); stat = streamreader->ReadNext(&rrb)) {
       std::cout << "Read recordbatch of " << rrb->num_rows() << " rows, " << rrb->num_columns() << " columns"
                 << std::endl;
+      if (first) {
+        arrow::PrettyPrint(*rrb, {}, &std::cout);
+        first = false;
+      }
     }
   } else if (filereader) {
     std::cout << "Reading " << filereader->num_record_batches() << " batches:" << std::endl;

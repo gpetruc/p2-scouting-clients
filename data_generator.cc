@@ -71,8 +71,9 @@ public:
   unsigned int fillOrbit(uint32_t orbitno, uint64_t *begin, uint64_t *end) {
     uint64_t *ptr = begin;
     unsigned int nevents = data_->events.size();
-    if (offs_ > 0) rnd_.discard(offs_-1);
-    for (unsigned int bx = offs_; bx < NBX;  bx += tmux_) {
+    if (offs_ > 0)
+      rnd_.discard(offs_ - 1);
+    for (unsigned int bx = offs_; bx < NBX; bx += tmux_) {
       unsigned int irnd = rnd_();
       //if (tmux_ != 1) rnd_.discard(tmux_-1); // align random numbers (but increase CPU usage)
       const auto &item = data_->events[irnd % nevents];
