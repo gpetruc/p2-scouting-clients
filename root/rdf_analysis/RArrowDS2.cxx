@@ -135,8 +135,7 @@ namespace ROOT {
         ROOT::RVec<RootType> fCache;
 
       public:
-        RArrowListReader(ROOT::RDF::RArrowDS2 *source,
-                         const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
+        RArrowListReader(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
             : fSource(source), fAddr(addr), fFirstEntry(0), fLastEntry(0) {}
         virtual ~RArrowListReader() {}
         void *GetImpl(Long64_t entry) override {
@@ -368,9 +367,7 @@ namespace ROOT {
         }
         ~IPCFileSource() override {}
         std::shared_ptr<arrow::Schema> Schema() override { return schema_; }
-        void Start() override {
-          iBatch_ = 0;
-        }
+        void Start() override { iBatch_ = 0; }
         std::shared_ptr<arrow::RecordBatch> Next() override {
           if (iBatch_ == lastBatch_) {
             return std::shared_ptr<arrow::RecordBatch>();
@@ -438,9 +435,9 @@ namespace ROOT {
             (std::find(requestedColumns.begin(), requestedColumns.end(), countName) != requestedColumns.end())) {
           fColumnNames.push_back(countName);
           fColumnAddresses[countName] = base;
-          std::cout << "Created " << countName << " with address " ;
-          for (auto  & i : base) std::cout << i << ".";
-          std::cout << std::endl;
+          //std::cout << "Created " << countName << " with address " ;
+          //for (auto  & i : base) std::cout << i << ".";
+          //std::cout << std::endl;
         }
       } else if ((tid == arrow::Type::STRING) || (dynamic_cast<const arrow::PrimitiveCType *>(&type) != nullptr)) {
         if (requestedColumns.empty() ||
@@ -491,12 +488,12 @@ namespace ROOT {
         } else {
           std::string msg = "called for column ";
           msg += fSchema->field(addr.front())->name();
-          msg += " unpacking at i = "+ std::to_string(i) + "/" + std::to_string(n);
+          msg += " unpacking at i = " + std::to_string(i) + "/" + std::to_string(n);
           msg += " current type " + type->ToString() + ", id " + std::to_string(type->id());
-          throw std::runtime_error("RArrowDS2::GetArrowType ERROR: "+msg);
+          throw std::runtime_error("RArrowDS2::GetArrowType ERROR: " + msg);
         }
       }
-      for ( ; listDepth > 0; --listDepth) 
+      for (; listDepth > 0; --listDepth)
         type = arrow::list(type);
       return type;
     }
@@ -526,9 +523,9 @@ namespace ROOT {
         } else {
           std::string msg = "called for column ";
           msg += fSchema->field(addr.front())->name();
-          msg += " unpacking at i = "+ std::to_string(i) + "/" + std::to_string(n);
+          msg += " unpacking at i = " + std::to_string(i) + "/" + std::to_string(n);
           msg += " current type " + ret->type()->ToString() + ", id " + std::to_string(ret->type()->id());
-          throw std::runtime_error("RArrowDS2::GetArrowColumn ERROR: "+msg);
+          throw std::runtime_error("RArrowDS2::GetArrowColumn ERROR: " + msg);
         }
       }
       while (!offsetArrays.empty()) {

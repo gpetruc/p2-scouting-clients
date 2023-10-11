@@ -13,7 +13,7 @@
 #include "ROOT/RNTupleDS.hxx"
 #include <ROOT/RSnapshotOptions.hxx>
 #ifdef USE_ARROW
-#include "RArrowDS2.hxx"
+  #include "RArrowDS2.hxx"
 #endif
 #include <chrono>
 
@@ -288,10 +288,10 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
                  "Puppi.quality",
                  "Triplet_Index",
                  "Triplet_Mass"};
-      d3.Snapshot<uint16_t,  // run
-                  uint32_t,  // orbit
-                  uint16_t,  // bx
-                  bool,      // good
+      d3.Snapshot<uint16_t,              // run
+                  uint32_t,              // orbit
+                  uint16_t,              // bx
+                  bool,                  // good
                   uint16_t,              // nPuppi
                   ROOT::RVec<float>,     // Puppi_pt (RNTuple reads them as RVec)
                   ROOT::RVec<float>,     // Puppi_eta
@@ -363,7 +363,7 @@ rdfAnalysis::Report w3piExample2022::run(const std::string &format,
     ROOT::RDataFrame d = ROOT::RDF::FromArrowIPCStream(infiles.front(), {});
     //d.Describe().Print();
     analyze(d, format, ntot, npre, npass, outformat, outfile);
-#endif    
+#endif
   } else {
     ROOT::RDataFrame d("Events", infiles);
     //d.Describe().Print();
