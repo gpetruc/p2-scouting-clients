@@ -53,24 +53,39 @@ namespace ROOT {
   namespace RDF {
     namespace Internal {
 
-      /// Helper class which keeps track for each slot where to get the entry.
-      template <typename RootType, typename ArrowArrayType>
-      class RArrowScalarReader : public ROOT::Detail::RDF::RColumnReaderBase {
-      private:
+      class RArrowColumnReaderBase {
+      protected:
         ROOT::RDF::RArrowDS2 *fSource;
         ROOT::RDF::RArrowDS2::ColumnAddress fAddr;
         ULong64_t fFirstEntry, fLastEntry;
+
+      public:
+        RArrowColumnReaderBase(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
+            : fSource(source), fAddr(addr), fFirstEntry(0), fLastEntry(0) {}
+        template <typename ArrowArrayType>
+        inline bool maybeFetch(Long64_t entry, std::shared_ptr<ArrowArrayType> &arrayPtr) {
+          if (ULong64_t(entry) >= fLastEntry) {
+            fSource->GetRange(entry, fFirstEntry, fLastEntry);
+            arrayPtr = std::static_pointer_cast<ArrowArrayType>(fSource->GetArrowColumn(fAddr));
+            return true;
+          } else {
+            return false;
+          }
+        }
+      };
+
+      /// Helper class which keeps track for each slot where to get the entry.
+      template <typename RootType, typename ArrowArrayType>
+      class RArrowScalarReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
+      private:
         std::shared_ptr<ArrowArrayType> fArray;
 
       public:
         RArrowScalarReader(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
-            : fSource(source), fAddr(addr), fFirstEntry(0), fLastEntry(0) {}
+            : RArrowColumnReaderBase(source, addr) {}
         virtual ~RArrowScalarReader() {}
         void *GetImpl(Long64_t entry) override {
-          if (ULong64_t(entry) >= fLastEntry) {
-            fSource->GetRange(entry, fFirstEntry, fLastEntry);
-            fArray = std::static_pointer_cast<ArrowArrayType>(fSource->GetArrowColumn(fAddr));
-          }
+          maybeFetch(entry, fArray);
           // need to cast due to 'long long' vs 'long' and 'signed char' vs 'char' differences
           const RootType *ptr = reinterpret_cast<const RootType *>(fArray->raw_values());
           return (void *)(ptr + (entry - fFirstEntry));
@@ -78,79 +93,73 @@ namespace ROOT {
       };
 
       template <typename RootType, typename ArrowArrayType>
-      class RArrowCachingScalarReader : public ROOT::Detail::RDF::RColumnReaderBase {
+      class RArrowCachingScalarReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
       private:
-        ROOT::RDF::RArrowDS2 *fSource;
-        ROOT::RDF::RArrowDS2::ColumnAddress fAddr;
-        ULong64_t fFirstEntry, fLastEntry;
         std::shared_ptr<ArrowArrayType> fArray;
+        Long64_t fEntry;
         RootType fCache;
 
       public:
         RArrowCachingScalarReader(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
-            : fSource(source), fAddr(addr), fFirstEntry(0), fLastEntry(0) {}
+            : RArrowColumnReaderBase(source, addr), fEntry(std::numeric_limits<Long64_t>::max()) {}
         virtual ~RArrowCachingScalarReader() {}
         void *GetImpl(Long64_t entry) override {
-          if (ULong64_t(entry) >= fLastEntry) {
-            fSource->GetRange(entry, fFirstEntry, fLastEntry);
-            fArray = std::static_pointer_cast<ArrowArrayType>(fSource->GetArrowColumn(fAddr));
+          if (entry != fEntry) {
+            maybeFetch(entry, fArray);
+            fCache = fArray->Value(entry - fFirstEntry);
+            fEntry = entry;
           }
-          fCache = fArray->Value(entry - fFirstEntry);
           return (void *)(&fCache);
         }
       };
 
-      class RArrowOffsetsReader : public ROOT::Detail::RDF::RColumnReaderBase {
+      class RArrowOffsetsReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
       private:
-        ROOT::RDF::RArrowDS2 *fSource;
-        ROOT::RDF::RArrowDS2::ColumnAddress fAddr;
-        ULong64_t fFirstEntry, fLastEntry;
         std::shared_ptr<arrow::UInt32Array> fArray;
+        Long64_t fEntry;
         UInt_t fCache;
 
       public:
         RArrowOffsetsReader(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
-            : fSource(source), fAddr(addr), fFirstEntry(0), fLastEntry(0) {}
+            : RArrowColumnReaderBase(source, addr), fEntry(std::numeric_limits<Long64_t>::max()) {}
         virtual ~RArrowOffsetsReader() {}
         void *GetImpl(Long64_t entry) override {
-          if (ULong64_t(entry) >= fLastEntry) {
-            fSource->GetRange(entry, fFirstEntry, fLastEntry);
-            fArray = std::static_pointer_cast<arrow::UInt32Array>(fSource->GetArrowColumn(fAddr));
+          if (entry != fEntry) {
+            maybeFetch(entry, fArray);
+            const uint32_t *ptr = fArray->raw_values();
+            Long64_t i = entry - fFirstEntry;
+            fCache = ptr[i + 1] - ptr[i];
+            fEntry = entry;
           }
-          const uint32_t *ptr = fArray->raw_values();
-          Long64_t i = entry - fFirstEntry;
-          fCache = ptr[i + 1] - ptr[i];
           return (void *)(&fCache);
         }
       };
 
       template <typename RootType, typename ArrowArrayType>
-      class RArrowListReader : public ROOT::Detail::RDF::RColumnReaderBase {
+      class RArrowListReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
       private:
-        ROOT::RDF::RArrowDS2 *fSource;
-        ROOT::RDF::RArrowDS2::ColumnAddress fAddr;
-        ULong64_t fFirstEntry, fLastEntry;
         std::shared_ptr<arrow::ListArray> fListArray;
         std::shared_ptr<ArrowArrayType> fArray;
+        Long64_t fEntry;
         ROOT::RVec<RootType> fCache;
 
       public:
         RArrowListReader(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
-            : fSource(source), fAddr(addr), fFirstEntry(0), fLastEntry(0) {}
+            : RArrowColumnReaderBase(source, addr), fEntry(std::numeric_limits<Long64_t>::max()) {}
         virtual ~RArrowListReader() {}
         void *GetImpl(Long64_t entry) override {
-          if (ULong64_t(entry) >= fLastEntry) {
-            fSource->GetRange(entry, fFirstEntry, fLastEntry);
-            fListArray = std::static_pointer_cast<arrow::ListArray>(fSource->GetArrowColumn(fAddr));
-            fArray = std::static_pointer_cast<ArrowArrayType>(fListArray->values());
+          if (entry != fEntry) {
+            if (maybeFetch(entry, fListArray))
+              fArray = std::static_pointer_cast<ArrowArrayType>(fListArray->values());
+            int64_t arrowEntry = entry - fFirstEntry;
+            uint32_t offs = fListArray->value_offset(arrowEntry);
+            uint32_t length = fListArray->value_offset(arrowEntry + 1) - offs;
+            // need to cast for differences between 'long long' and 'long' (both 64 bits), and 'signed char' vs 'char' (8 bits)
+            const RootType *ptr = reinterpret_cast<const RootType *>(fArray->raw_values() + offs);
+            RVec<RootType> tmp(const_cast<RootType *>(ptr), length);
+            std::swap(fCache, tmp);
+            fEntry = entry;
           }
-          int64_t arrowEntry = entry - fFirstEntry;
-          uint32_t offs = fListArray->value_offset(arrowEntry);
-          uint32_t length = fListArray->value_length(arrowEntry);
-          // need to cast for differences between 'long long' and 'long' (both 64 bits), and 'signed char' vs 'char' (8 bits)
-          const RootType *ptr = reinterpret_cast<const RootType *>(fArray->raw_values() + offs);
-          RVec<RootType> tmp(const_cast<RootType *>(ptr), length);
-          std::swap(fCache, tmp);
           return (void *)(&fCache);
         }
       };
