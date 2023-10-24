@@ -38,10 +38,10 @@ $(ANALYSES_OBJ): %.o: %.cc %.h analysis.h $(EXTRA_HEADERS)
 	$(CC) $(CCFLAGS) -c $< -o $@
 
 run.exe: run.cc $(ANALYSES_OBJ) $(EXTRA_OBJS)
-	$(CC) $(CCFLAGS) $(LIBS) $^ -o $@
+	$(CC) $(CCFLAGS) $^ $(LIBS) -o $@
 
 liveAnalysis.exe: liveAnalysis.cc $(ANALYSES_OBJ) $(EXTRA_OBJS)
-	$(CC) $(CCFLAGS) $(LIBS) $^ -I$(LCG)/include -ltbb -o $@
+	$(CC) $(CCFLAGS) $^ $(LIBS) -I$(LCG)/include -ltbb -o $@
 
 format:
 	@clang-format -i *.cc *.h *.cxx *.hxx

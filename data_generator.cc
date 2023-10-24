@@ -114,7 +114,8 @@ public:
     uint64_t *end_buff = orbit_buff + (orbSize_ / sizeof(uint64_t));
     for (unsigned int i = 1; i <= norbits; i += orbitmux) {
       unsigned int nwords = src_.fillOrbit(i, orbit_buff, end_buff);
-      write(fd, orbit_buff, nwords * sizeof(uint64_t));
+      unsigned int written = write(fd, orbit_buff, nwords * sizeof(uint64_t));
+      assert(written == nwords * sizeof(uint64_t));
     }
     std::free(orbit_buff);
   }
@@ -170,7 +171,8 @@ public:
         ptr += (chunksize256 << 2);
         first = false;
       }
-      writev(fd, &iovecs.front(), 2 * ipacket);
+      unsigned int written = writev(fd, &iovecs.front(), 2 * ipacket);
+      assert(written == (((nwords + 3) / 4) + ipacket) * 32);  // round up nwords/4 to get the number of 256-bit rows
       if (sync_) {
         auto tend = std::chrono::steady_clock::now();
         double dt = (std::chrono::duration<double>(tend - tstart)).count();
@@ -247,7 +249,7 @@ void start_and_run(std::unique_ptr<GeneratorBase> &&generator,
     } else {
       filename = target.substr(0, pos) + std::to_string(iclient) + target.substr(pos + 2);
     }
-    fd = open(filename.c_str(), O_WRONLY | O_TRUNC | O_CREAT);
+    fd = open(filename.c_str(), O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
   } else {
     std::string ip = target.substr(0, pos), port = target.substr(pos + 1);
     fd = connect_tcp(ip.c_str(), port.c_str(), iclient);

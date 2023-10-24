@@ -43,14 +43,14 @@ ALLOBJ := RootUnpackMaker.o $(RNTUPLE_UNPACKER_OBJ) $(TREE_UNPACKER_OBJ)
 RootUnpackMaker.o : RootUnpackMaker.cc RootUnpackMaker.h  $(TREE_UNPACKER_INC) $(RNTUPLE_UNPACKER_INC) $(BASE_INC)
 	$(CC) -fPIC $(CCFLAGS) -c $< -o $@
 
-librootUnpacker.so: $(ALLOBJ) -lunpackerBase
-	$(CC) -shared $(CCFLAGS) $(LIBS) -L.. $(ALLOBJ)  -lunpackerBase -o $@
+librootUnpacker.so: $(ALLOBJ) libunpackerBase.so
+	$(CC) $(CCFLAGS) $(ALLOBJ) -shared -fPIC $(LIBS) -L..  -lunpackerBase -o $@
 
-rootUnpacker.exe: RootUnpackMain.cc -lunpackerBase -lrootUnpacker
-	$(CC) $(CCFLAGS) $(LIBS) $< -L.. -L. -lunpackerBase -lrootUnpacker -o $@
+rootUnpacker.exe: RootUnpackMain.cc libunpackerBase.so librootUnpacker.so
+	$(CC) $(CCFLAGS) $< $(LIBS) -L.. -L. -lunpackerBase -lrootUnpacker -o $@
 
-liveUnpacker.exe: liveUnpacker.cc -lunpackerBase -lrootUnpacker
-	$(CC) $(CCFLAGS) $(LIBS) $< -L.. -L. -lunpackerBase -lrootUnpacker -I$(TBB)/include -ltbb -o $@
+liveUnpacker.exe: liveUnpacker.cc libunpackerBase.so librootUnpacker.so
+	$(CC) $(CCFLAGS) $< $(LIBS) -L.. -L. -lunpackerBase -lrootUnpacker -I$(TBB)/include -ltbb -o $@
 
 format:
 	@clang-format -i *.h *.cc

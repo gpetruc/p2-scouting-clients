@@ -1,6 +1,6 @@
 CC = c++
 CCFLAGS = --std=c++17 -march=native -W -Wall  -Ofast -ggdb
-LIBS = -lstdc++ -lpthread
+LIBS = -lstdc++ -pthread
 .PHONY: clean format run_tests env104 envdev env9dev
 USE_ROOT ?= 1
 USE_APACHE ?= 1
@@ -69,13 +69,13 @@ UnpackerBase.o: UnpackerBase.cc unpack.h UnpackerBase.h
 	$(CC) -fPIC $(CCFLAGS) -c $< -o $@
 
 libunpackerBase.so: UnpackerBase.o
-	$(CC) -shared $(CCFLAGS) $(LIBS) $^ -o $@
+	$(CC) $(CCFLAGS) $^ -shared $(LIBS) -o $@
 
 %.exe : %.cc
-	$(CC) $(CCFLAGS) $(LIBS) $< -o $@
+	$(CC) $(CCFLAGS) $< $(LIBS) -o $@
 
 receive256tbb.exe : receive256tbb.cc
-	$(CC) $(CCFLAGS) $(LIBS) $< -o $@ -I$(TBB)/include -L$(TBB)/lib -ltbb
+	$(CC) $(CCFLAGS) $< $(LIBS) -o $@ -I$(TBB)/include -L$(TBB)/lib -ltbb
  
 format:
 	clang-format -i data_checker.cc data_generator.cc unpack.h UnpackerBase.h
