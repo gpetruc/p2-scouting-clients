@@ -24,6 +24,7 @@
 #include <thread>
 #include <atomic>
 #include <vector>
+#include <algorithm>
 
 #include <getopt.h>
 
@@ -263,8 +264,10 @@ public:
     ret.bx = (out >> 12) & 0xFFF;
     ret.npuppi = out & 0xFFF;
     ret.err = (out & (1llu << 61));
-    if ((out >> 62) != 0b10)
+    if ((out >> 62) != 0b10) {
+      printf("%02d: ERROR, bad event header %016lx (%lu)\n", id_, out, out);
       throw std::runtime_error(std::to_string(id_) + ": Bad event header found: " + std::to_string(out));
+    }
     if (events_ < ndebug_) {
       printf("Event header %016lx, orbit %u (%x), bx %u, npuppi %d, ok %d\n",
              out,
@@ -1013,28 +1016,62 @@ public:
   DTHRollingReceive256(unsigned int orbSize_kb,
                        const char *basepath,
                        unsigned int orbitsPerFile,
-                       unsigned int prescale = 1)
+                       unsigned int prescale = 1,
+                       bool addCMSSWHeaders = false)
       : DTHBasicChecker256(orbSize_kb),
         orbitsPerFile_(orbitsPerFile),
         prescale_(prescale),
         basepath_(basepath),
         fname_(),
-        fout_() {}
+        fout_(),
+        addCMSSWHeaders_(addCMSSWHeaders),
+        runNumber_(0),
+        lumisectionNumber_(0),
+        orbitsThisFile_(0),
+        bytesThisFile_(0) {}
 
   ~DTHRollingReceive256() override {}
 
-  void newFile(uint32_t orbitNo) {
-    if (fout_.is_open()) {
-      assert(fname_.length() > 4);
-      rename(fname_.c_str(), fname_.substr(0, fname_.length() - 4).c_str());
-      printf("Moved %s -> %s\n", fname_.c_str(), fname_.substr(0, fname_.length() - 4).c_str());
+  void setCMSSW(uint32_t runNumber, uint32_t lumisectionNumber) {
+    addCMSSWHeaders_ = true;
+    runNumber_ = runNumber;
+    lumisectionNumber_ = lumisectionNumber;
+  }
+
+  void closeFile() {
+    if (addCMSSWHeaders_) {
+      fout_.seekg(12, std::ios::beg);
+      fout_.write(reinterpret_cast<const char *>(orbitsThisFile_), sizeof(orbitsThisFile_));
+      fout_.seekg(24, std::ios::beg);
+      fout_.write(reinterpret_cast<const char *>(bytesThisFile_), sizeof(bytesThisFile_));
     }
     fout_.close();
+    assert(fname_.length() > 4);
+    rename(fname_.c_str(), fname_.substr(0, fname_.length() - 4).c_str());
+    printf("Moved %s -> %s\n", fname_.c_str(), fname_.substr(0, fname_.length() - 4).c_str());
+  }
+
+  void newFile(uint32_t orbitNo) {
+    if (fout_.is_open()) {
+      closeFile();
+    }
     char buff[1024];
     snprintf(buff, 1023, "%s.ts%02d.orb%08u.dump.tmp", basepath_.c_str(), firstbx_, orbitNo);
     fname_ = buff;
     fout_.open(buff, std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
     printf("%02u: opening output file %s\n", id_, buff);
+    if (addCMSSWHeaders_) {
+      char fileHeader[32];
+      std::fill(fileHeader, fileHeader + 32, 0);
+      std::copy_n("RAW_0002", 8, fileHeader);
+      *reinterpret_cast<uint16_t *>(&fileHeader[8]) = 32;
+      *reinterpret_cast<uint16_t *>(&fileHeader[10]) = 20;
+      *reinterpret_cast<uint32_t *>(&fileHeader[16]) = runNumber_;
+      *reinterpret_cast<uint32_t *>(&fileHeader[20]) = lumisectionNumber_;
+      fout_.write(fileHeader, 32);
+      orbitsThisFile_ = 0;
+      bytesThisFile_ = 32;
+    }
   }
 
   int run(int in) override {
@@ -1111,6 +1148,12 @@ public:
         if (!fout_.is_open() || oh.orbit % orbitsPerFile_ == orbitMux_)
           newFile(oh.orbit);
         if (prescale_ != 0 && (prescale_ == 1 || oh.orbit % prescale_ == orbitMux_)) {
+          if (addCMSSWHeaders_) {
+            uint32_t orbitHeader[6] = {6, runNumber_, lumisectionNumber_, oh.orbit, totlen256 << 5, 0};
+            fout_.write(reinterpret_cast<const char *>(orbitHeader), 6 * sizeof(uint32_t));
+            bytesThisFile_ += 24 + (totlen256 << 5);
+            orbitsThisFile_++;
+          }
           fout_.write(reinterpret_cast<char *>(orbit_buff), totlen256 << 5);
           wroteBytes += totlen256 << 5;
         }
@@ -1130,12 +1173,8 @@ public:
       printf("%02u: Terminating an exception was raised:\n%s\n", id_, e.what());
       ret = 1;
     }
-    if (fout_.is_open()) {
-      assert(fname_.length() > 4);
-      rename(fname_.c_str(), fname_.substr(0, fname_.length() - 4).c_str());
-      printf("Moved %s -> %s\n", fname_.c_str(), fname_.substr(0, fname_.length() - 4).c_str());
-      fout_.close();
-    }
+    if (fout_.is_open())
+      closeFile();
     auto tend = std::chrono::steady_clock::now();
     std::chrono::duration<double> dt = tend - tstart;
     double readRate = readBytes / 1024.0 / 1024.0 / 1024.0 / dt.count();
@@ -1157,7 +1196,137 @@ protected:
   unsigned int orbitsPerFile_, prescale_;
   std::string basepath_, fname_;
   std::fstream fout_;
-  bool checkData_;
+  bool addCMSSWHeaders_;
+  uint32_t runNumber_, lumisectionNumber_, orbitsThisFile_;
+  uint64_t bytesThisFile_;
+};
+
+class CMSSWChecker : public CheckerBase {
+public:
+  CMSSWChecker() {}
+  ~CMSSWChecker() override{};
+
+  int run(int in) override {
+    int ret = 0;
+    uint64_t buff64;
+    unsigned int nprint = 100;
+    struct stat stat_buf;
+    bool statok = (fstat(in, &stat_buf) == 0);
+    uint64_t fsize = 0, fhSize = 0, readsize = 32;
+    if (statok) {
+      fsize = stat_buf.st_size;
+    } else {
+      printf("%02d: Warning, can't stat the input file (maybe it's not a file?), so I can't check the size.\n", id_);
+    }
+    char fileHeader[32];
+    if (read(in, fileHeader, 32) != 32) {
+      printf("%02d: Error reading file header\n", id_);
+      return 2;
+    }
+    if ((std::string(fileHeader, fileHeader + 8) != "RAW_0002") ||
+        (*reinterpret_cast<uint16_t *>(&fileHeader[8]) != 32) ||
+        (*reinterpret_cast<uint16_t *>(&fileHeader[10]) != 20)) {
+      printf("%02d: Bad file header (%02x %02x %02x %02x %02x %02x %02x %02x), hsize %d, type %d\n",
+             id_,
+             int(fileHeader[0]),
+             int(fileHeader[1]),
+             int(fileHeader[2]),
+             int(fileHeader[3]),
+             int(fileHeader[4]),
+             int(fileHeader[5]),
+             int(fileHeader[6]),
+             int(fileHeader[7]),
+             *reinterpret_cast<uint16_t *>(&fileHeader[8]),
+             *reinterpret_cast<uint16_t *>(&fileHeader[10]));
+      return 1;
+    }
+    uint32_t fhRun = *reinterpret_cast<uint32_t *>(&fileHeader[16]),
+             fhLumi = *reinterpret_cast<uint32_t *>(&fileHeader[20]),
+             fhNOrbits = *reinterpret_cast<uint32_t *>(&fileHeader[12]);
+    fhSize = *reinterpret_cast<uint64_t *>(&fileHeader[24]);
+    if (statok && (fhSize != fsize)) {
+      printf("%02d: File size mismatch: actual size %lu, header reports %lu\n", id_, fsize, fhSize);
+      return 1;
+    }
+    printf("%02d: Starting to process run %u, lumi %u, n orbits %u, size %lu\n", id_, fhRun, fhLumi, fhNOrbits, fhSize);
+    uint32_t orbitHeader[6];
+    auto tstart = std::chrono::steady_clock::now();
+    try {
+      while (good(in) && orbits_ <= maxorbits_) {
+        int ohbytes = read(in, reinterpret_cast<char *>(orbitHeader), 24);
+        if (ohbytes == 0)
+          break;
+        if (ohbytes != 24) {
+          throw std::runtime_error(std::to_string(id_) + ": Failed reading orbit header, got only " +
+                                   std::to_string(ohbytes) + "/24 bytes.");
+        }
+        uint32_t ehRun = orbitHeader[1], ehLumi = orbitHeader[2], ehOrbit = orbitHeader[3], ehSize = orbitHeader[4];
+        if (orbitHeader[0] != 6 || ehRun != fhRun || ehLumi != fhLumi || ehSize % 8 != 0) {
+          printf("%02d: Error in orbit header: version %u, run %u (expect %u), lumi %u (expect %u), size %u\n",
+                 id_,
+                 orbitHeader[0],
+                 ehRun,
+                 fhRun,
+                 ehLumi,
+                 fhLumi,
+                 ehSize);
+          throw std::runtime_error(std::to_string(id_) + ": Error in orbit header");
+        }
+        //printf("%02d: orbit %u (%u / %u), size %u\n", id_, ehOrbit, orbits_.load(), fhNOrbits, ehSize);
+        int nwordsOrbit = ehSize >> 3;
+        while (nwordsOrbit > 0) {
+          buff64 = 0;
+          do {
+            int n = read(in, reinterpret_cast<char *>(&buff64), 8);
+            if (n == 0) {
+              break;
+            }
+            if (n != 8) {
+              throw std::runtime_error(std::to_string(id_) + ": Failed reading Event Header, got only " +
+                                       std::to_string(n) + "/8 bytes.");
+            }
+          } while (buff64 == 0 && (--nwordsOrbit) > 0);
+          if (buff64 == 0 || nwordsOrbit == 0)
+            break;
+          PuppiHeader evh = parsePuppiHeader(buff64);
+          if (evh.orbit != ehOrbit) {
+            throw std::runtime_error(std::to_string(id_) + ": Orbit number mismatch between orbit header " +
+                                     std::to_string(ehOrbit) + " and puppi header " + std::to_string(evh.orbit));
+          }
+          unsigned int n64 = evh.npuppi + 1;
+          puppis_ += evh.npuppi;
+          nwordsOrbit -= n64;
+          if (evh.npuppi) {
+            skip(in, 8 * evh.npuppi);
+          }
+          countEventsAndOrbits(evh.orbit, evh.bx);
+          if (events_ % nprint == 0) {
+            printf("Read %10lu events, %7u orbits.\n", events_.load(), orbits_.load());
+            nprint = std::min(nprint << 1, 100000u);
+          }
+        }  // loop for reading an orbit
+        if (nwordsOrbit != 0) {
+          throw std::runtime_error(std::to_string(id_) + ": Failed reading whole of orbit " + std::to_string(ehOrbit) +
+                                   " remaining " + std::to_string(nwordsOrbit) + " words");
+        }
+        readsize += 24 + ehSize;
+      }  // loop reading orbits
+      if (readsize != fhSize) {
+        throw std::runtime_error(std::to_string(id_) + ": Failed reading whole file, got " + std::to_string(readsize) +
+                                 " bytes, header had " + std::to_string(fhSize) + " bytes");
+      }
+      if (orbits_ != fhNOrbits) {
+        throw std::runtime_error(std::to_string(id_) + ": Failed reading whole file, got " +
+                                 std::to_string(orbits_.load()) + " orbits, header had " + std::to_string(fhNOrbits));
+      }
+    } catch (const std::exception &e) {
+      printf("Terminating an exception was raised:\n%s\n", e.what());
+      ret = 1;
+    }
+    auto tend = std::chrono::steady_clock::now();
+    printDone(tstart, tend);
+    return ret;
+  }
 };
 
 int setup_tcp(const char *addr, const char *port, unsigned int port_offs = 0) {
@@ -1465,6 +1634,8 @@ int main(int argc, char **argv) {
         return 3;
       }
       checker.reset(new DTHRollingReceive256(orbsize_kb, argv[optind], std::atoi(argv[optind + 1]), prescale));
+    } else if (kind == "CMSSW") {
+      checker.reset(new CMSSWChecker());
     } else if (kind == "TrashData") {
       checker.reset(new TrashData(buffsize_kb));
     } else if (kind == "ReceiveAndStore") {
