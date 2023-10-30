@@ -113,9 +113,10 @@ namespace ROOT {
         }
       };
 
+      template <typename ArrowOffsetsArrayType = arrow::UInt32Array>
       class RArrowOffsetsReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
       private:
-        std::shared_ptr<arrow::UInt32Array> fArray;
+        std::shared_ptr<ArrowOffsetsArrayType> fArray;
         Long64_t fEntry;
         UInt_t fCache;
 
@@ -126,7 +127,7 @@ namespace ROOT {
         void *GetImpl(Long64_t entry) override {
           if (entry != fEntry) {
             maybeFetch(entry, fArray);
-            const uint32_t *ptr = fArray->raw_values();
+            const auto *ptr = fArray->raw_values();
             Long64_t i = entry - fFirstEntry;
             fCache = ptr[i + 1] - ptr[i];
             fEntry = entry;
@@ -135,10 +136,21 @@ namespace ROOT {
         }
       };
 
-      template <typename RootType, typename ArrowArrayType>
+      template <typename T>
+      class RArrowConstantReader : public ROOT::Detail::RDF::RColumnReaderBase {
+      private:
+        T fValue;
+
+      public:
+        RArrowConstantReader(const T &value) : fValue(value) {}
+        virtual ~RArrowConstantReader() {}
+        void *GetImpl(Long64_t) override { return (void *)(&fValue); }
+      };
+
+      template <typename RootType, typename ArrowArrayType, typename ArrowListType = arrow::ListArray>
       class RArrowListReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
       private:
-        std::shared_ptr<arrow::ListArray> fListArray;
+        std::shared_ptr<ArrowListType> fListArray;
         std::shared_ptr<ArrowArrayType> fArray;
         Long64_t fEntry;
         ROOT::RVec<RootType> fCache;
@@ -152,8 +164,8 @@ namespace ROOT {
             if (maybeFetch(entry, fListArray))
               fArray = std::static_pointer_cast<ArrowArrayType>(fListArray->values());
             int64_t arrowEntry = entry - fFirstEntry;
-            uint32_t offs = fListArray->value_offset(arrowEntry);
-            uint32_t length = fListArray->value_offset(arrowEntry + 1) - offs;
+            auto offs = fListArray->value_offset(arrowEntry);
+            auto length = fListArray->value_offset(arrowEntry + 1) - offs;
             // need to cast for differences between 'long long' and 'long' (both 64 bits), and 'signed char' vs 'char' (8 bits)
             const RootType *ptr = reinterpret_cast<const RootType *>(fArray->raw_values() + offs);
             RVec<RootType> tmp(const_cast<RootType *>(ptr), length);
@@ -164,10 +176,10 @@ namespace ROOT {
         }
       };
 
-      template <typename RootType, typename ArrowArrayType>
+      template <typename RootType, typename ArrowArrayType, typename ArrowListType = arrow::ListArray>
       class RArrowCopyListReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
       private:
-        std::shared_ptr<arrow::ListArray> fListArray;
+        std::shared_ptr<ArrowListType> fListArray;
         std::shared_ptr<ArrowArrayType> fArray;
         Long64_t fEntry;
         ROOT::RVec<RootType> fCache;
@@ -255,6 +267,14 @@ namespace ROOT {
           fTypeName.push_back("ROOT::VecOps::RVec<%s>");
           return l.value_type()->Accept(this);
         }
+        arrow::Status Visit(const arrow::LargeListType &l) override {
+          fTypeName.push_back("ROOT::VecOps::RVec<%s>");
+          return l.value_type()->Accept(this);
+        }
+        arrow::Status Visit(const arrow::FixedSizeListType &l) override {
+          fTypeName.push_back("ROOT::VecOps::RVec<%s>");
+          return l.value_type()->Accept(this);
+        }
         std::string result() {
           // This recursively builds a nested type.
           std::string result = "%s";
@@ -294,9 +314,19 @@ namespace ROOT {
         }
         virtual arrow::Status Visit(const arrow::ListType &t) override {
           fLevel++;
+          fListStack.push_back(&t);
           return t.value_type()->Accept(this);
         }
-
+        virtual arrow::Status Visit(const arrow::LargeListType &t) override {
+          fLevel++;
+          fListStack.push_back(&t);
+          return t.value_type()->Accept(this);
+        }
+        virtual arrow::Status Visit(const arrow::FixedSizeListType &t) override {
+          fLevel++;
+          fListStack.push_back(&t);
+          return t.value_type()->Accept(this);
+        }
         using ::arrow::TypeVisitor::Visit;
 
         std::unique_ptr<ROOT::Detail::RDF::RColumnReaderBase> result() { return std::move(fReader); }
@@ -305,6 +335,7 @@ namespace ROOT {
         ROOT::RDF::RArrowDS2 *fSource;
         const ROOT::RDF::RArrowDS2::ColumnAddress *fAddr;
         std::unique_ptr<ROOT::Detail::RDF::RColumnReaderBase> fReader;
+        std::vector<const arrow::BaseListType *> fListStack;
         unsigned int fLevel = 0;
 
         template <typename RT, typename AT>
@@ -313,7 +344,15 @@ namespace ROOT {
             fReader = std::make_unique<RArrowScalarReader<RT, AT>>(fSource, *fAddr);
             return arrow::Status::OK();
           } else if (fLevel == 1) {
-            fReader = std::make_unique<RArrowListReader<RT, AT>>(fSource, *fAddr);
+            if (fListStack.front()->id() == arrow::Type::LIST) {
+              fReader = std::make_unique<RArrowListReader<RT, AT>>(fSource, *fAddr);
+            } else if (fListStack.front()->id() == arrow::Type::LARGE_LIST) {
+              fReader = std::make_unique<RArrowListReader<RT, AT, arrow::LargeListArray>>(fSource, *fAddr);
+            } else if (fListStack.front()->id() == arrow::Type::FIXED_SIZE_LIST) {
+              fReader = std::make_unique<RArrowListReader<RT, AT, arrow::FixedSizeListArray>>(fSource, *fAddr);
+            } else {
+              return arrow::Status::NotImplemented("");
+            }
             return arrow::Status::OK();
           } else {
             return arrow::Status::NotImplemented("");
@@ -325,7 +364,15 @@ namespace ROOT {
             fReader = std::make_unique<RArrowCachingScalarReader<RT, AT>>(fSource, *fAddr);
             return arrow::Status::OK();
           } else if (fLevel == 1) {
-            fReader = std::make_unique<RArrowCopyListReader<RT, AT>>(fSource, *fAddr);
+            if (fListStack.front()->id() == arrow::Type::LIST) {
+              fReader = std::make_unique<RArrowCopyListReader<RT, AT, arrow::ListArray>>(fSource, *fAddr);
+            } else if (fListStack.front()->id() == arrow::Type::LARGE_LIST) {
+              fReader = std::make_unique<RArrowCopyListReader<RT, AT, arrow::LargeListArray>>(fSource, *fAddr);
+            } else if (fListStack.front()->id() == arrow::Type::FIXED_SIZE_LIST) {
+              fReader = std::make_unique<RArrowCopyListReader<RT, AT, arrow::FixedSizeListArray>>(fSource, *fAddr);
+            } else {
+              return arrow::Status::NotImplemented("");
+            }
             return arrow::Status::OK();
           }
           return arrow::Status::NotImplemented("");
@@ -454,8 +501,8 @@ namespace ROOT {
           subaddr.back() = i;
           maybeAddColumns(name + "." + subfield->name(), *subfield->type(), subaddr, requestedColumns);
         }
-      } else if (tid == arrow::Type::LIST) {
-        const arrow::ListType *listType = dynamic_cast<const arrow::ListType *>(&type);
+      } else if (tid == arrow::Type::LIST || tid == arrow::Type::LARGE_LIST || tid == arrow::Type::FIXED_SIZE_LIST) {
+        const arrow::BaseListType *listType = dynamic_cast<const arrow::BaseListType *>(&type);
         ColumnAddress subaddr{base};  // make copy
         subaddr.push_back(0);
         // Add the contents
@@ -497,23 +544,34 @@ namespace ROOT {
       if (addr == fColumnAddresses.end()) {
         return std::shared_ptr<arrow::DataType>();
       }
-      if (name.substr(0, 13) == "R_rdf_sizeof_") {
-        return arrow::int32();
-      } else {
-        return GetArrowType(addr->second);
-      }
+      return GetArrowType(addr->second);
     }
 
     std::shared_ptr<arrow::DataType> RArrowDS2::GetArrowType(const ColumnAddress &addr) const {
       auto type = fSchema->field(addr.front())->type();
-      unsigned int listDepth = 0;
+      std::vector<int> listSize;  // fize for fixed lists, -32 or -64 for long or short lists
       for (unsigned int i = 1, n = addr.size(); i < n; ++i) {
         if (type->id() == arrow::Type::LIST) {
           if (addr[i] == 0) {
-            listDepth++;
+            listSize.push_back(-32);
             type = static_cast<const arrow::ListType &>(*type).value_type();
           } else {
-            type = arrow::int32();
+            type = arrow::uint32();
+          }
+        } else if (type->id() == arrow::Type::LARGE_LIST) {
+          if (addr[i] == 0) {
+            listSize.push_back(-64);
+            type = static_cast<const arrow::LargeListType &>(*type).value_type();
+          } else {
+            type = arrow::uint64();
+          }
+        } else if (type->id() == arrow::Type::FIXED_SIZE_LIST) {
+          auto listType = static_cast<const arrow::FixedSizeListType *>(type.get());
+          if (addr[i] == 0) {
+            listSize.push_back(listType->list_size());
+            type = listType->value_type();
+          } else {
+            type = arrow::uint32();
           }
         } else if (type->id() == arrow::Type::STRUCT) {
           type = static_cast<const arrow::StructType &>(*type).field(addr[i])->type();
@@ -525,8 +583,15 @@ namespace ROOT {
           throw std::runtime_error("RArrowDS2::GetArrowType ERROR: " + msg);
         }
       }
-      for (; listDepth > 0; --listDepth)
-        type = arrow::list(type);
+      while (!listSize.empty()) {
+        if (listSize.back() == -32)
+          type = arrow::list(type);
+        else if (listSize.back() == -64)
+          type = arrow::large_list(type);
+        else
+          type = arrow::fixed_size_list(type, listSize.back());
+        listSize.pop_back();
+      }
       return type;
     }
 
@@ -541,28 +606,56 @@ namespace ROOT {
     std::shared_ptr<arrow::Array> RArrowDS2::GetArrowColumn(const ColumnAddress &addr) {
       auto ret = fRecordBatch->column(addr.front());
       std::vector<std::shared_ptr<arrow::Array>> offsetArrays;
+      std::vector<int> sizeArrays;  // size for fixed lists, -32 or -64 for short or long lists
       for (unsigned int i = 1, n = addr.size(); i < n; ++i) {
-        if (ret->type()->id() == arrow::Type::LIST) {
+        auto id = ret->type()->id();
+        if (id == arrow::Type::LIST) {
           const arrow::ListArray *list = static_cast<const arrow::ListArray *>(ret.get());
           if (addr[i] == 0) {
             offsetArrays.push_back(list->offsets());
+            sizeArrays.push_back(-32);
             ret = list->values();
           } else {
             ret = list->offsets();
           }
-        } else if (ret->type()->id() == arrow::Type::STRUCT) {
+        } else if (id == arrow::Type::LARGE_LIST) {
+          const arrow::LargeListArray *list = static_cast<const arrow::LargeListArray *>(ret.get());
+          if (addr[i] == 0) {
+            offsetArrays.push_back(list->offsets());
+            sizeArrays.push_back(-64);
+            ret = list->values();
+          } else {
+            ret = list->offsets();
+          }
+        } else if (id == arrow::Type::FIXED_SIZE_LIST) {
+          const arrow::FixedSizeListArray *list = static_cast<const arrow::FixedSizeListArray *>(ret.get());
+          if (addr[i] == 0) {
+            offsetArrays.emplace_back();
+            sizeArrays.push_back(list->list_type()->list_size());
+            ret = list->values();
+          } else {
+            ret = std::shared_ptr<arrow::Array>();
+          }
+        } else if (id == arrow::Type::STRUCT) {
           ret = *static_cast<const arrow::StructArray &>(*ret).GetFlattenedField(addr[i]);
         } else {
           std::string msg = "called for column ";
           msg += fSchema->field(addr.front())->name();
           msg += " unpacking at i = " + std::to_string(i) + "/" + std::to_string(n);
-          msg += " current type " + ret->type()->ToString() + ", id " + std::to_string(ret->type()->id());
+          msg += " current type " + ret->type()->ToString() + ", id " + std::to_string(id);
           throw std::runtime_error("RArrowDS2::GetArrowColumn ERROR: " + msg);
         }
       }
       while (!offsetArrays.empty()) {
-        ret = *arrow::ListArray::FromArrays(*offsetArrays.back(), *ret);
+        if (sizeArrays.back() == -32) {
+          ret = *arrow::ListArray::FromArrays(*offsetArrays.back(), *ret);
+        } else if (sizeArrays.back() == -64) {
+          ret = *arrow::LargeListArray::FromArrays(*offsetArrays.back(), *ret);
+        } else {
+          ret = *arrow::FixedSizeListArray::FromArrays(ret, sizeArrays.back());
+        }
         offsetArrays.pop_back();
+        sizeArrays.pop_back();
       }
       return ret;
     }
@@ -592,11 +685,15 @@ namespace ROOT {
         msg += colName;
         throw std::runtime_error(msg);
       }
+      if (colName.substr(0, 13) == "R_rdf_sizeof_") {
+        return "UInt_t";  // all sizes we return are uint32_t
+      }
       Internal::RDFTypeNameGetter typeGetter;
       auto status = type->Accept(&typeGetter);
       if (status.ok() == false) {
-        std::string msg = "RArrowDS2 does not support column " + msg += colName;
-        msg += +" of type " + type->name();
+        std::string msg = "RArrowDS2 does not support column ";
+        msg += colName;
+        msg += " of type " + type->name();
         throw std::runtime_error(msg);
       }
       return typeGetter.result();
@@ -627,11 +724,21 @@ namespace ROOT {
       std::unique_ptr<ROOT::Detail::RDF::RColumnReaderBase> ret;
       auto addr = fColumnAddresses.find(std::string(columnName));
       assert(addr != fColumnAddresses.end());
-      if (columnName.substr(0, 13) == "R_rdf_sizeof_") {
-        return std::make_unique<Internal::RArrowOffsetsReader>(this, addr->second);
-      } else {
-        auto type = GetArrowType(addr->second);
-        if (type) {
+      auto type = GetArrowType(addr->second);
+      if (type) {
+        if (columnName.substr(0, 13) == "R_rdf_sizeof_") {
+          if (type->id() == arrow::Type::LIST) {
+            return std::make_unique<Internal::RArrowOffsetsReader<arrow::UInt32Array>>(this, addr->second);
+          } else if (type->id() == arrow::Type::LARGE_LIST) {
+            return std::make_unique<Internal::RArrowOffsetsReader<arrow::UInt64Array>>(this, addr->second);
+          } else if (type->id() == arrow::Type::FIXED_SIZE_LIST) {
+            return std::make_unique<Internal::RArrowConstantReader<UInt_t>>(
+                static_cast<arrow::FixedSizeListType &>(*type).list_size());
+          } else {
+            throw std::runtime_error("RArrowDS2 can't make a size column for " + std::string(columnName) +
+                                     " arrow type " + type->ToString());
+          }
+        } else {
           Internal::ReaderMaker maker(this, addr->second);
           auto ok = type->Accept(&maker);
           if (ok.ok()) {
@@ -640,10 +747,10 @@ namespace ROOT {
             throw std::runtime_error("RArrowDS2 can't make a maker for " + std::string(columnName) + " arrow type " +
                                      type->ToString());
           }
-        } else {
-          throw std::runtime_error("RArrowDS2 can't make a type for " + std::string(columnName) + " arrow type " +
-                                   type->ToString());
         }
+      } else {
+        throw std::runtime_error("RArrowDS2 can't make a type for " + std::string(columnName) + " arrow type " +
+                                 type->ToString());
       }
     }
 

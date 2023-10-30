@@ -43,6 +43,9 @@ run.exe: run.cc $(ANALYSES_OBJ) $(EXTRA_OBJS)
 liveAnalysis.exe: liveAnalysis.cc $(ANALYSES_OBJ) $(EXTRA_OBJS)
 	$(CC) $(CCFLAGS) $^ $(LIBS) -I$(LCG)/include -ltbb -o $@
 
+testRArrowDS2.exe: testRArrowDS2.cc RArrowDS2.o
+	$(CC) $(CCFLAGS) -Wno-unused-result $^ $(LIBS) -I$(LCG)/include -o $@
+
 format:
 	@clang-format -i *.cc *.h *.cxx *.hxx
 

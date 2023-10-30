@@ -18,7 +18,7 @@ using arrow::Status;
 
 void usage() {
   printf("Usage: arrow_read.exe [options] <format> infile.arrow \n");
-  printf("   layout := ipc \n");
+  printf("   layout := ipcstream | ipcfile \n");
   printf("Options:\n");
   printf("  -j, --cputhreads N: set the capacity of the global CPU thread pool\n");
   printf("  -J, --iothreads N: set the capacity of the global I/O thread pool\n");
