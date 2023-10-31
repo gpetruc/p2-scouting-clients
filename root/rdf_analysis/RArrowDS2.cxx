@@ -79,6 +79,29 @@ namespace ROOT {
       class RArrowScalarReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
       private:
         std::shared_ptr<ArrowArrayType> fArray;
+        Long64_t fEntry;
+        RootType fCache;
+
+      public:
+        RArrowScalarReader(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
+            : RArrowColumnReaderBase(source, addr), fEntry(std::numeric_limits<Long64_t>::max()) {}
+        virtual ~RArrowScalarReader() {}
+        void *GetImpl(Long64_t entry) override {
+          if (entry != fEntry) {
+            maybeFetch(entry, fArray);
+            fCache = fArray->Value(entry - fFirstEntry);
+            fEntry = entry;
+          }
+          return (void *)(&fCache);
+        }
+      };
+
+      // specalization: zero-copy for native arrays other than bool and string
+      template <typename RootType, typename T>
+      class RArrowScalarReader<RootType, arrow::NumericArray<T>> : public ROOT::Detail::RDF::RColumnReaderBase,
+                                                                   RArrowColumnReaderBase {
+      private:
+        std::shared_ptr<arrow::NumericArray<T>> fArray;
 
       public:
         RArrowScalarReader(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
@@ -89,27 +112,6 @@ namespace ROOT {
           // need to cast due to 'long long' vs 'long' and 'signed char' vs 'char' differences
           const RootType *ptr = reinterpret_cast<const RootType *>(fArray->raw_values());
           return (void *)(ptr + (entry - fFirstEntry));
-        }
-      };
-
-      template <typename RootType, typename ArrowArrayType>
-      class RArrowCachingScalarReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
-      private:
-        std::shared_ptr<ArrowArrayType> fArray;
-        Long64_t fEntry;
-        RootType fCache;
-
-      public:
-        RArrowCachingScalarReader(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
-            : RArrowColumnReaderBase(source, addr), fEntry(std::numeric_limits<Long64_t>::max()) {}
-        virtual ~RArrowCachingScalarReader() {}
-        void *GetImpl(Long64_t entry) override {
-          if (entry != fEntry) {
-            maybeFetch(entry, fArray);
-            fCache = fArray->Value(entry - fFirstEntry);
-            fEntry = entry;
-          }
-          return (void *)(&fCache);
         }
       };
 
@@ -147,6 +149,28 @@ namespace ROOT {
         void *GetImpl(Long64_t) override { return (void *)(&fValue); }
       };
 
+      // copy data from an Arrow Array to a ROOT RVec: generic implementation
+      template <typename RootType, typename ArrowArrayType>
+      struct RVecFiller {
+        template <typename OffsType, typename LengthType>
+        static void fill(ROOT::RVec<RootType> &cache, ArrowArrayType &array, OffsType offs, LengthType length) {
+          cache.resize(length);
+          for (LengthType i = 0; i < length; ++i, ++offs) {
+            cache[i] = array.Value(offs);
+          }
+        }
+      };
+      // specalization: zero-copy for native arrays other than bool and string
+      template <typename RootType, typename T>
+      struct RVecFiller<RootType, arrow::NumericArray<T>> {
+        template <typename OffsType, typename LengthType>
+        static void fill(ROOT::RVec<RootType> &cache, arrow::NumericArray<T> &array, OffsType offs, LengthType length) {
+          const RootType *ptr = reinterpret_cast<const RootType *>(array.raw_values() + offs);
+          RVec<RootType> tmp(const_cast<RootType *>(ptr), length);
+          std::swap(cache, tmp);
+        }
+      };
+
       template <typename RootType, typename ArrowArrayType, typename ArrowListType = arrow::ListArray>
       class RArrowListReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
       private:
@@ -159,6 +183,8 @@ namespace ROOT {
         RArrowListReader(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
             : RArrowColumnReaderBase(source, addr), fEntry(std::numeric_limits<Long64_t>::max()) {}
         virtual ~RArrowListReader() {}
+        template <typename T, typename O>
+        void fillRVec(int64_t arrowEntry, O offs, O length) {}
         void *GetImpl(Long64_t entry) override {
           if (entry != fEntry) {
             if (maybeFetch(entry, fListArray))
@@ -166,39 +192,7 @@ namespace ROOT {
             int64_t arrowEntry = entry - fFirstEntry;
             auto offs = fListArray->value_offset(arrowEntry);
             auto length = fListArray->value_offset(arrowEntry + 1) - offs;
-            // need to cast for differences between 'long long' and 'long' (both 64 bits), and 'signed char' vs 'char' (8 bits)
-            const RootType *ptr = reinterpret_cast<const RootType *>(fArray->raw_values() + offs);
-            RVec<RootType> tmp(const_cast<RootType *>(ptr), length);
-            std::swap(fCache, tmp);
-            fEntry = entry;
-          }
-          return (void *)(&fCache);
-        }
-      };
-
-      template <typename RootType, typename ArrowArrayType, typename ArrowListType = arrow::ListArray>
-      class RArrowCopyListReader : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
-      private:
-        std::shared_ptr<ArrowListType> fListArray;
-        std::shared_ptr<ArrowArrayType> fArray;
-        Long64_t fEntry;
-        ROOT::RVec<RootType> fCache;
-
-      public:
-        RArrowCopyListReader(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
-            : RArrowColumnReaderBase(source, addr), fEntry(std::numeric_limits<Long64_t>::max()) {}
-        virtual ~RArrowCopyListReader() {}
-        void *GetImpl(Long64_t entry) override {
-          if (entry != fEntry) {
-            if (maybeFetch(entry, fListArray))
-              fArray = std::static_pointer_cast<ArrowArrayType>(fListArray->values());
-            int64_t arrowEntry = entry - fFirstEntry;
-            int64_t valueEntry = fListArray->value_offset(arrowEntry);
-            unsigned int length = fListArray->value_length(arrowEntry);
-            fCache.resize(length);
-            for (unsigned int i = 0; i < length; ++i, ++valueEntry) {
-              fCache[i] = fArray->Value(valueEntry);
-            }
+            RVecFiller<RootType, ArrowArrayType>::fill(fCache, *fArray, offs, length);
             fEntry = entry;
           }
           return (void *)(&fCache);
@@ -307,11 +301,9 @@ namespace ROOT {
         virtual arrow::Status Visit(const arrow::FloatType &) override { return make<Float_t, arrow::FloatArray>(); }
         virtual arrow::Status Visit(const arrow::DoubleType &) override { return make<Double_t, arrow::DoubleArray>(); }
         virtual arrow::Status Visit(const arrow::StringType &) override {
-          return makeC<std::string, arrow::StringArray>();
+          return make<std::string, arrow::StringArray>();
         }
-        virtual arrow::Status Visit(const arrow::BooleanType &) override {
-          return makeC<Bool_t, arrow::BooleanArray>();
-        }
+        virtual arrow::Status Visit(const arrow::BooleanType &) override { return make<Bool_t, arrow::BooleanArray>(); }
         virtual arrow::Status Visit(const arrow::ListType &t) override {
           fLevel++;
           fListStack.push_back(&t);
@@ -357,25 +349,6 @@ namespace ROOT {
           } else {
             return arrow::Status::NotImplemented("");
           }
-        }
-        template <typename RT, typename AT>
-        arrow::Status makeC() {
-          if (fLevel == 0) {
-            fReader = std::make_unique<RArrowCachingScalarReader<RT, AT>>(fSource, *fAddr);
-            return arrow::Status::OK();
-          } else if (fLevel == 1) {
-            if (fListStack.front()->id() == arrow::Type::LIST) {
-              fReader = std::make_unique<RArrowCopyListReader<RT, AT, arrow::ListArray>>(fSource, *fAddr);
-            } else if (fListStack.front()->id() == arrow::Type::LARGE_LIST) {
-              fReader = std::make_unique<RArrowCopyListReader<RT, AT, arrow::LargeListArray>>(fSource, *fAddr);
-            } else if (fListStack.front()->id() == arrow::Type::FIXED_SIZE_LIST) {
-              fReader = std::make_unique<RArrowCopyListReader<RT, AT, arrow::FixedSizeListArray>>(fSource, *fAddr);
-            } else {
-              return arrow::Status::NotImplemented("");
-            }
-            return arrow::Status::OK();
-          }
-          return arrow::Status::NotImplemented("");
         }
       };
 
