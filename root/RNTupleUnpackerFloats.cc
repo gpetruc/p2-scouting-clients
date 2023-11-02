@@ -34,7 +34,7 @@ void RNTupleUnpackerFloats::fillEvent(
     readshared(words[i], (*data_.p_pt)[i], (*data_.p_eta)[i], (*data_.p_phi)[i]);
     if (readpid(words[i], (*data_.p_pdgid)[i])) {
       readcharged(words[i], (*data_.p_z0)[i], (*data_.p_dxy)[i], (*data_.p_quality)[i]);
-      (*data_.p_wpuppi)[i] = 0;
+      (*data_.p_wpuppi)[i] = 1;
     } else {
       readneutral(words[i], (*data_.p_wpuppi)[i], (*data_.p_quality)[i]);
       (*data_.p_z0)[i] = 0;

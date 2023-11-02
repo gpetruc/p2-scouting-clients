@@ -26,7 +26,7 @@ void RNTupleUnpackerCollFloat::fillEvent(
     readshared(words[i], *data_.p_pt, *data_.p_eta, *data_.p_phi);
     if (readpid(words[i], *data_.p_pdgid)) {
       readcharged(words[i], *data_.p_z0, *data_.p_dxy, *data_.p_quality);
-      *data_.p_wpuppi = 0;
+      *data_.p_wpuppi = 1;
     } else {
       readneutral(words[i], *data_.p_wpuppi, *data_.p_quality);
       *data_.p_z0 = 0;

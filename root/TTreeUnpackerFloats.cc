@@ -28,7 +28,7 @@ void TTreeUnpackerFloats::fillEvent(
     readshared(words[i], data_.pt[i], data_.eta[i], data_.phi[i]);
     if (readpid(words[i], data_.pdgid[i])) {
       readcharged(words[i], data_.z0[i], data_.dxy[i], data_.quality[i]);
-      data_.wpuppi[i] = 0;
+      data_.wpuppi[i] = 1;
     } else {
       readneutral(words[i], data_.wpuppi[i], data_.quality[i]);
       data_.z0[i] = 0;

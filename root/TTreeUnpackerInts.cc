@@ -28,7 +28,7 @@ void TTreeUnpackerInts::fillEvent(
     data_.pid[i] = (words[i] >> 37) & 0x7;
     if (data_.pid[i] > 1) {
       readcharged(words[i], data_.z0[i], data_.dxy[i], data_.quality[i]);
-      data_.wpuppi[i] = 0;
+      data_.wpuppi[i] = 256;
     } else {
       readneutral(words[i], data_.wpuppi[i], data_.quality[i]);
       data_.z0[i] = 0;
