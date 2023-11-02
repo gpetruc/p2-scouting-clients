@@ -34,15 +34,15 @@ ifeq ($(USE_APACHE), 1)
 endif
 
 envdev:
-	@echo 'source /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt/setup.sh;'
-	@echo 'export TBB=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt;'
+	@echo 'source /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-el8-gcc11-opt/setup.sh;'
+	@echo 'export TBB=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-el8-gcc11-opt;'
 	@echo 'export LD_LIBRARY_PATH=$$PWD:$${LD_LIBRARY_PATH};'
 ifeq ($(USE_ROOT), 1)
 	@echo 'export LD_LIBRARY_PATH=$$PWD/root:$${LD_LIBRARY_PATH};'
 endif
 ifeq ($(USE_APACHE), 1)
-	@echo 'export ARROW_INCLUDE=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt;'
-	@echo 'export ARROW_LIB=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt/lib64;'
+	@echo 'export ARROW_INCLUDE=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-el8-gcc11-opt;'
+	@echo 'export ARROW_LIB=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-el8-gcc11-opt/lib64;'
 	@echo 'export LD_LIBRARY_PATH=$$PWD/apache:$${LD_LIBRARY_PATH};'
 endif
 
@@ -84,6 +84,12 @@ format:
 
 clean:
 	@rm *.exe *.data *.o *.so 2> /dev/null || true
+ifeq ($(USE_ROOT), 1)
+	@cd root && $(MAKE) clean > /dev/null
+endif
+ifeq ($(USE_APACHE), 1)
+	@cd apache && $(MAKE) clean > /dev/null
+endif
 
 run_tests: data_checker.exe data_generator.exe
 	@echo "Running basic file tests"

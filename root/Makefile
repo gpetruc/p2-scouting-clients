@@ -58,6 +58,7 @@ format:
 
 clean:
 	@rm *.exe *.root *.o *.so 2> /dev/null || true
+	@cd rdf_analysis && $(MAKE) clean
 
 run_tests: rootUnpacker.exe
 	@for T in float float24 int raw64; do  \

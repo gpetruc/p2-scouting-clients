@@ -13,50 +13,161 @@
 #include <arrow/array.h>
 #include <arrow/array/builder_primitive.h>
 
-void analyze(ROOT::RDataFrame &d, unsigned long int &ntot, unsigned long int &npass, const std::string &outFile) {
+/* Demonstrate writing and reading a file in Arrow format testing the following
+* All integer data types 8, 16, 32, 64 bits, signed and unsigned
+* Floats and doubles
+* booleans and lists of bools
+* Structures, nested
+* lists, large lists, fixed - size lists, both of primitive types and of structures
+*/
+
+template <typename T>
+T gen_val(int event, int entry = 0) {
+  return 37 * event + 11 * entry;
+}
+template <>
+bool gen_val<bool>(int event, int entry) {
+  return entry % 2 == 1 || event % 3 == 0;
+}
+template <>
+double gen_val<double>(int event, int entry) {
+  return 0.7 * M_PI * event - 4.414 * entry;
+}
+template <>
+float gen_val<float>(int event, int entry) {
+  return gen_val<double>(event, entry);
+}
+template <>
+int64_t gen_val<int64_t>(int event, int entry) {
+  return gen_val<int>(event, entry) * 1000;
+}
+unsigned int gen_few(int event, int offs = 0) { return (event % 3) + 5 + offs; }
+
+template <typename T>
+ROOT::RDF::RNode checkSingle(ROOT::RDF::RNode &d, const std::string &name) {
+  return d.Filter(
+      [name](T obsVal, ULong64_t ievent) {
+        if (ievent == 0)
+          std::cout << "Checking " << name << std::endl;
+        T expVal = gen_val<T>(ievent);
+        if (obsVal != expVal) {
+          std::cout << "Mismatch for field " << name << ", entry " << ievent << ", found " << obsVal << ", expected "
+                    << expVal << std::endl;
+          return false;
+        } else {
+          return true;
+        }
+      },
+      {name, "rdfentry_"});
+};
+template <typename T>
+ROOT::RDF::RNode checkList(ROOT::RDF::RNode &d, const std::string &name, int noffs=0, int eoffs=0) {
+  return d.Filter(
+      [name, noffs, eoffs](const ROOT::RVec<T> &obsVal, ULong64_t ievent) {
+        if (ievent == 0)
+          std::cout << "Checking " << name << std::endl;
+        unsigned int obsSize = obsVal.size(), expSize = noffs < 0 ? -noffs : gen_few(ievent, noffs);
+        if (obsSize != expSize) {
+          std::cout << "Mismatch for field " << name << ", entry " << ievent << ", size " << obsSize << ", expected "
+                    << expSize << std::endl;
+          return false;
+        }
+        for (unsigned int i = 0; i < obsSize; ++i) {
+          T expVal = gen_val<T>(ievent, i + eoffs);
+          if (obsVal[i] != expVal) {
+            std::cout << "Mismatch for field " << name << ", entry " << ievent << ", at index " << i << ", found "
+                      << obsVal[i] << ", expected " << expVal << std::endl;
+            return false;
+          }
+        }
+        return true;
+      },
+      {name, "rdfentry_"});
+};
+
+void analyze(ROOT::RDataFrame &d, unsigned long int &ntot, unsigned long int &ncheck, unsigned long int &npass, const std::string &outFile) {
   d.Describe().Print();
   auto c0 = d.Count();
+  // then we vaildate all entries
+  ROOT::RDF::RNode dv = d;
+  dv = checkSingle<double>(dv, "doubleVar");
+  dv = checkSingle<Char_t>(dv, "int8Var");
+  dv = checkSingle<uint8_t>(dv, "uint8Var");
+  dv = checkSingle<int16_t>(dv, "int16Var");
+  dv = checkSingle<UInt_t>(dv, "uintVar");
+  dv = checkSingle<int64_t>(dv, "int64Var");
+  dv = checkSingle<bool>(dv, "boolVar");
+  dv = checkSingle<uint16_t>(dv, "GlobalStruct.uint16");
+  dv = checkList<float>(dv, "GlobalStruct.floats", 2, 5);
+  dv = checkList<uint16_t>(dv, "uint16FixList", -2, 0);
+  dv = checkList<bool>(dv, "boolFixList", -5, 10);
+  dv = checkList<Char_t>(dv, "int8List64", 10, 2);
+  dv = checkList<float>(dv, "Struct.floatMem");
+  dv = checkList<int>(dv, "Struct.intMem");
+  dv = checkList<uint64_t>(dv, "Struct.SubStruct.uint64SubMem");
+  dv = checkList<bool>(dv, "Struct.SubStruct.boolSubMem");
+  auto cv = dv.Count();
   auto d1 = d.Filter(
                  [](bool x, double y, const ROOT::VecOps::RVec<float> &z) {
-                   //printf("x = %d, y = %g, z = %g, %g, %g, ...\n", int(x), std::sin(y/7.0), std::cos(z[0]), std::sin(z[1]), z[2]);
-                   return x && (std::sin(y / 7.0) > 0.7) && std::abs(std::cos(z.front())) < 0.3;
+                   return x && (std::sin(y / 7.0) > 0.17) && (std::abs(std::cos(z.front())) < 0.3 || std::abs(std::cos(z.back())) < 0.3);
                  },
-                 {"boolVar", "doubleVar", "Puppi.floatMem"})
-                .Alias("nPuppi", "#Puppi")
-                .Alias("Puppi_boolMem", "Puppi.boolMem")
-                .Alias("Puppi_floatMem", "Puppi.floatMem")
-                .Alias("Puppi_intMem", "Puppi.intMem")
-                .Alias("Puppi_uint64Mem", "Puppi.uint64Mem");
+                 {"boolVar", "doubleVar", "Struct.floatMem"})
+  .Alias("nint8List64", "#int8List64")
+  .Alias("GlobalStruct_nfloats", "#GlobalStruct.floats")
+  .Alias("GlobalStruct_uint16","GlobalStruct.uint16")
+  .Alias("GlobalStruct_floats","GlobalStruct.floats")
+  .Alias("nStruct", "#Struct")
+  .Alias("Struct_floatMem","Struct.floatMem")
+  .Alias("Struct_intMem","Struct.intMem")
+  .Alias("Struct_SubStruct_uint64SubMem","Struct.SubStruct.uint64SubMem")
+  .Alias("Struct_SubStruct_boolSubMem","Struct.SubStruct.boolSubMem");
+
   auto c1 = d1.Count();
   ROOT::RDF::RSnapshotOptions opts;
   opts.fCompressionLevel = 0;
-  std::vector<std::string> columns = {"boolVar",
+  std::vector<std::string> columns = {"doubleVar",
                                       "int8Var",
                                       "uint8Var",
                                       "int16Var",
-                                      "uint16Var",
                                       "uintVar",
                                       "int64Var",
-                                      "doubleVar",
-                                      "nPuppi",
-                                      "Puppi_boolMem",
-                                      "Puppi_floatMem",
-                                      "Puppi_intMem",
-                                      "Puppi_uint64Mem"};
-  d1.Snapshot<bool,
+                                      "boolVar",
+                                      "uint16FixList",
+                                      "boolFixList",
+                                      "nint8List64",
+                                      "int8List64",
+                                      "GlobalStruct_uint16",
+                                      "GlobalStruct_nfloats",
+                                      "GlobalStruct_floats",
+                                      "nStruct",
+                                      "Struct_floatMem",
+                                      "Struct_intMem",
+                                      "Struct_SubStruct_uint64SubMem",
+                                      "Struct_SubStruct_boolSubMem"};
+  d1.Snapshot<double,
               Char_t,
               uint8_t,
               int16_t,
+              UInt_t,
+              Long64_t,
+              bool,
+              // lists
+              ROOT::RVec<uint16_t>,
+              ROOT::RVec<bool>,
+              uint32_t,
+              ROOT::RVec<Char_t>,
+              // global struct
               uint16_t,
               uint32_t,
-              Long64_t,
-              double,
+              ROOT::RVec<float>,
+              // struct + substruct
               uint32_t,
-              ROOT::RVec<bool>,
               ROOT::RVec<float>,
               ROOT::RVec<int32_t>,
-              ROOT::RVec<uint64_t>>("Events", outFile.c_str(), columns, opts);
+              ROOT::RVec<uint64_t>,
+              ROOT::RVec<bool>>("Events", outFile.c_str(), columns, opts);
   ntot = *c0;
+  ncheck = *cv;
   npass = *c1;
 }
 
@@ -65,53 +176,70 @@ int writeFile(const std::string &format, const std::string &fOut) {
   std::shared_ptr<arrow::Field> int8VarField = arrow::field("int8Var", arrow::int8());
   std::shared_ptr<arrow::Field> uint8VarField = arrow::field("uint8Var", arrow::uint8());
   std::shared_ptr<arrow::Field> int16VarField = arrow::field("int16Var", arrow::int16());
-  std::shared_ptr<arrow::Field> uint16VarField = arrow::field("uint16Var", arrow::uint16());
   std::shared_ptr<arrow::Field> uintVarField = arrow::field("uintVar", arrow::uint32());
   std::shared_ptr<arrow::Field> int64VarField = arrow::field("int64Var", arrow::int64());
   std::shared_ptr<arrow::Field> boolVarField = arrow::field("boolVar", arrow::boolean());
 
+  std::shared_ptr<arrow::Field> uint16FixListField =
+      arrow::field("uint16FixList", arrow::fixed_size_list(arrow::uint16(), 2));
+  std::shared_ptr<arrow::Field> boolFixListField =
+      arrow::field("boolFixList", arrow::fixed_size_list(arrow::boolean(), 5));
+
+  std::shared_ptr<arrow::Field> int8List64Field = arrow::field("int8List64", arrow::large_list(arrow::int8()));
+
+  std::shared_ptr<arrow::Field> uint16GMemField = arrow::field("uint16", arrow::uint16());
+  std::shared_ptr<arrow::Field> floatsGMemField = arrow::field("floats", arrow::list(arrow::float32()));
+  std::shared_ptr<arrow::DataType> globalStructType = arrow::struct_({uint16GMemField, floatsGMemField});
+  std::shared_ptr<arrow::Field> globalStructField = arrow::field("GlobalStruct", globalStructType);
+
   std::shared_ptr<arrow::Field> floatMemField = arrow::field("floatMem", arrow::float32());
   std::shared_ptr<arrow::Field> intMemField = arrow::field("intMem", arrow::int32());
-  std::shared_ptr<arrow::Field> uint64MemField = arrow::field("uint64Mem", arrow::uint64());
-  std::shared_ptr<arrow::Field> boolMemField = arrow::field("boolMem", arrow::boolean());
+  std::shared_ptr<arrow::Field> uint64SubMemField = arrow::field("uint64SubMem", arrow::uint64());
+  std::shared_ptr<arrow::Field> boolSubMemField = arrow::field("boolSubMem", arrow::boolean());
+  std::shared_ptr<arrow::DataType> substructType = arrow::struct_({uint64SubMemField, boolSubMemField});
+  std::shared_ptr<arrow::Field> substructField = arrow::field("SubStruct", substructType);
 
-  std::shared_ptr<arrow::DataType> puppiType =
-      arrow::struct_({floatMemField, intMemField, uint64MemField, boolMemField});
+  std::shared_ptr<arrow::DataType> structType = arrow::struct_({floatMemField, intMemField, substructField});
+  std::shared_ptr<arrow::DataType> structsType = arrow::list(structType);
+  ;
+  std::shared_ptr<arrow::Field> structField = arrow::field("Struct", structsType);
 
-  std::shared_ptr<arrow::DataType> puppisType;
-  if (format.find("list64") != std::string::npos)
-    puppisType = arrow::large_list(puppiType);
-  else if (format.find("fixlist") != std::string::npos)
-    puppisType = arrow::fixed_size_list(puppiType, 7);
-  else
-    puppisType = arrow::list(puppiType);
-
-  std::shared_ptr<arrow::Field> puppiField = arrow::field("Puppi", puppisType);
   std::shared_ptr<arrow::Schema> schema = arrow::schema({doubleVarField,
                                                          int8VarField,
                                                          uint8VarField,
                                                          int16VarField,
-                                                         uint16VarField,
                                                          uintVarField,
                                                          int64VarField,
                                                          boolVarField,
-                                                         puppiField});
+                                                         uint16FixListField,
+                                                         boolFixListField,
+                                                         int8List64Field,
+                                                         globalStructField,
+                                                         structField});
 
   arrow::DoubleBuilder doubleVarBuilder;
   arrow::Int8Builder int8VarBuilder;
   arrow::UInt8Builder uint8VarBuilder;
   arrow::Int16Builder int16VarBuilder;
-  arrow::UInt16Builder uint16VarBuilder;
   arrow::UInt32Builder uintVarBuilder;
   arrow::Int64Builder int64VarBuilder;
   arrow::BooleanBuilder boolVarBuilder;
 
+  arrow::UInt16Builder uint16FixListBuilder;
+  arrow::BooleanBuilder boolFixListBuilder;
+
+  arrow::Int8Builder int8List64Builder;
+  std::vector<uint64_t> offsets64(1, 0);
+
+  arrow::UInt16Builder uint16GMemBuilder;
+  arrow::FloatBuilder floatsGMemBuilder;
+  std::vector<uint32_t> goffsets(1, 0);
+
   arrow::FloatBuilder floatMemBuilder;
   arrow::Int32Builder intMemBuilder;
-  arrow::UInt64Builder uint64MemBuilder;
-  arrow::BooleanBuilder boolMemBuilder;
+  arrow::UInt64Builder uint64SubMemBuilder;
+  arrow::BooleanBuilder boolSubMemBuilder;
   std::vector<uint32_t> offsets(1, 0);
-  std::vector<uint64_t> offsets64;
   std::shared_ptr<arrow::io::FileOutputStream> outputFile = *arrow::io::FileOutputStream::Open(fOut);
   arrow::ipc::IpcWriteOptions ipcWriteOptions = arrow::ipc::IpcWriteOptions::Defaults();
   std::shared_ptr<arrow::ipc::RecordBatchWriter> batchWriter;
@@ -120,65 +248,93 @@ int writeFile(const std::string &format, const std::string &fOut) {
   } else if (format.find("ipc_file") == 0) {
     batchWriter = *arrow::ipc::MakeFileWriter(outputFile, schema, ipcWriteOptions);
   }
-  for (int ibatch = 0, nev = 35; ibatch < 4; ++ibatch) {
-    for (int iev = 0; iev < nev; ++iev) {
-      for (int ipuppi = 0; ipuppi < 7; ++ipuppi) {
-        floatMemBuilder.Append((1000 * ibatch + 100 * iev + ipuppi) * 0.1);
-        intMemBuilder.Append(1000 * ibatch + 100 * iev + ipuppi);
-        uint64MemBuilder.Append(1000 * ibatch + 100 * iev + ipuppi);
-        boolMemBuilder.Append(ipuppi % 2 == 0 || iev % 3 == 0);
-      }
-      offsets.emplace_back(offsets.back() + 7);
-      doubleVarBuilder.Append(1000 * ibatch + iev);
-      int8VarBuilder.Append(10 * ibatch + iev);
-      uint8VarBuilder.Append(10 * ibatch + iev);
-      int16VarBuilder.Append(100 * ibatch + iev);
-      uint16VarBuilder.Append(100 * ibatch + iev);
-      int64VarBuilder.Append(10000 * ibatch + iev * 100);
-      uintVarBuilder.Append(10000 * ibatch + iev * 100);
-      boolVarBuilder.Append(true);
-    }
-    auto floatMemArray = floatMemBuilder.Finish();
-    auto intMemArray = intMemBuilder.Finish();
-    auto uint64MemArray = uint64MemBuilder.Finish();
-    auto boolMemArray = boolMemBuilder.Finish();
-    auto doubleVarArray = doubleVarBuilder.Finish();
-    auto int8VarArray = int8VarBuilder.Finish();
-    auto uint8VarArray = uint8VarBuilder.Finish();
-    auto int16VarArray = int16VarBuilder.Finish();
-    auto uint16VarArray = uint16VarBuilder.Finish();
-    auto int64VarArray = int64VarBuilder.Finish();
-    auto uintVarArray = uintVarBuilder.Finish();
-    auto boolVarArray = boolVarBuilder.Finish();
+  for (int ibatch = 0, ievent = 0, nev = 250; ibatch < 8; ++ibatch) {
+    for (int ie = 0; ie < nev; ++ie, ++ievent) {
+      doubleVarBuilder.Append(gen_val<double>(ievent));
+      int8VarBuilder.Append(gen_val<int8_t>(ievent));
+      uint8VarBuilder.Append(gen_val<uint8_t>(ievent));
+      int16VarBuilder.Append(gen_val<int16_t>(ievent));
+      uintVarBuilder.Append(gen_val<uint32_t>(ievent));
+      int64VarBuilder.Append(gen_val<int64_t>(ievent));
+      boolVarBuilder.Append(gen_val<bool>(ievent));
+      for (unsigned int ientry = 0; ientry < 2; ++ientry)
+        uint16FixListBuilder.Append(gen_val<uint32_t>(ievent, ientry));
+      for (unsigned int ientry = 0; ientry < 5; ++ientry)
+        boolFixListBuilder.Append(gen_val<bool>(ievent, ientry + 10));
 
-    std::shared_ptr<arrow::Array> flatPuppiArray(new arrow::StructArray(
-        puppiType, offsets.back(), {*floatMemArray, *intMemArray, *uint64MemArray, *boolMemArray}));
-    std::shared_ptr<arrow::Array> puppiArray;
-    if (format.find("list64") != std::string::npos) {
-      offsets64.reserve(offsets.size());
-      for (auto o : offsets)
-        offsets64.emplace_back(o);
-      auto largePuppi =
-          std::make_shared<arrow::LargeListArray>(puppisType, nev, arrow::Buffer::Wrap(offsets64), flatPuppiArray);
-      puppiArray = std::static_pointer_cast<arrow::Array>(largePuppi);
-    } else if (format.find("fixlist") != std::string::npos) {
-      puppiArray = *arrow::FixedSizeListArray::FromArrays(flatPuppiArray, 7);
-    } else {
-      auto listPuppi =
-          std::make_shared<arrow::ListArray>(puppisType, nev, arrow::Buffer::Wrap(offsets), flatPuppiArray);
-      puppiArray = std::static_pointer_cast<arrow::Array>(listPuppi);
+      unsigned int nint8 = gen_few(ievent, 10);
+      for (unsigned int ientry = 0; ientry < nint8; ++ientry)
+        int8List64Builder.Append(gen_val<int8_t>(ievent, ientry + 2));
+      offsets64.push_back(offsets64.back() + nint8);
+
+      uint16GMemBuilder.Append(gen_val<uint16_t>(ievent));
+      unsigned int ngfloat = gen_few(ievent, 2);
+      for (unsigned int ientry = 0; ientry < ngfloat; ++ientry)
+        floatsGMemBuilder.Append(gen_val<float>(ievent, ientry + 5));
+      goffsets.push_back(goffsets.back() + ngfloat);
+
+      unsigned int nstruct = gen_few(ievent);
+      for (unsigned int ientry = 0; ientry < nstruct; ++ientry) {
+        floatMemBuilder.Append(gen_val<float>(ievent, ientry));
+        intMemBuilder.Append(gen_val<int>(ievent, ientry));
+        uint64SubMemBuilder.Append(gen_val<uint64_t>(ievent, ientry));
+        boolSubMemBuilder.Append(gen_val<bool>(ievent, ientry));
+      }
+      offsets.emplace_back(offsets.back() + nstruct);
     }
+
+    // then build things, bottom-up
+    auto uint64SubMemArray = *uint64SubMemBuilder.Finish();
+    auto boolSubMemArray = *boolSubMemBuilder.Finish();
+    std::shared_ptr<arrow::Array> flatSubStructArray(
+        new arrow::StructArray(substructType, offsets.back(), {uint64SubMemArray, boolSubMemArray}));
+
+    auto floatMemArray = *floatMemBuilder.Finish();
+    auto intMemArray = *intMemBuilder.Finish();
+    std::shared_ptr<arrow::Array> flatStructArray(
+        new arrow::StructArray(structType, offsets.back(), {floatMemArray, intMemArray, flatSubStructArray}));
+    std::shared_ptr<arrow::Array> structArray(
+        new arrow::ListArray(structsType, nev, arrow::Buffer::Wrap(offsets), flatStructArray));
+
+    auto flatFloatsGMemArray = *floatsGMemBuilder.Finish();
+    std::shared_ptr<arrow::Array> floatsGMemArray(
+        new arrow::ListArray(arrow::list(arrow::float32()), nev, arrow::Buffer::Wrap(goffsets), flatFloatsGMemArray));
+    auto uint16GMemArray = *uint16GMemBuilder.Finish();
+    std::shared_ptr<arrow::Array> globalStructArray(
+        new arrow::StructArray(globalStructType, nev, {uint16GMemArray, floatsGMemArray}));
+
+    auto doubleVarArray = *doubleVarBuilder.Finish();
+    auto int8VarArray = *int8VarBuilder.Finish();
+    auto uint8VarArray = *uint8VarBuilder.Finish();
+    auto int16VarArray = *int16VarBuilder.Finish();
+    auto uintVarArray = *uintVarBuilder.Finish();
+    auto int64VarArray = *int64VarBuilder.Finish();
+    auto boolVarArray = *boolVarBuilder.Finish();
+
+    auto flatUint16FixListArray = *uint16FixListBuilder.Finish();
+    auto flatBoolFixListArray = *boolFixListBuilder.Finish();
+    std::shared_ptr<arrow::Array> uint16FixListArray, boolFixListArray;
+    uint16FixListArray = *arrow::FixedSizeListArray::FromArrays(flatUint16FixListArray, 2);
+    boolFixListArray = *arrow::FixedSizeListArray::FromArrays(flatBoolFixListArray, 5);
+
+    auto flatInt8List64Array = *int8List64Builder.Finish();
+    std::shared_ptr<arrow::Array> int8List64Array(new arrow::LargeListArray(
+        arrow::large_list(arrow::int8()), nev, arrow::Buffer::Wrap(offsets64), flatInt8List64Array));
+
     std::shared_ptr<arrow::RecordBatch> batch = arrow::RecordBatch::Make(schema,
                                                                          nev,
-                                                                         {*doubleVarArray,
-                                                                          *int8VarArray,
-                                                                          *uint8VarArray,
-                                                                          *int16VarArray,
-                                                                          *uint16VarArray,
-                                                                          *uintVarArray,
-                                                                          *int64VarArray,
-                                                                          *boolVarArray,
-                                                                          puppiArray});
+                                                                         {doubleVarArray,
+                                                                          int8VarArray,
+                                                                          uint8VarArray,
+                                                                          int16VarArray,
+                                                                          uintVarArray,
+                                                                          int64VarArray,
+                                                                          boolVarArray,
+                                                                          uint16FixListArray,
+                                                                          boolFixListArray,
+                                                                          int8List64Array,
+                                                                          globalStructArray,
+                                                                          structArray});
     auto validres = batch->ValidateFull();
     if (!validres.ok()) {
       std::cout << "Validate: " << validres.ToString() << std::endl;
@@ -188,7 +344,8 @@ int writeFile(const std::string &format, const std::string &fOut) {
       if (!batchWriter->WriteRecordBatch(*batch).ok())
         return 2;
     offsets.resize(1);
-    offsets64.clear();
+    goffsets.resize(1);
+    offsets64.resize(1);
   }  // end of batch
   if (!batchWriter->Close().ok())
     return 3;
@@ -200,7 +357,7 @@ int writeFile(const std::string &format, const std::string &fOut) {
 int main(int argc, char **argv) {
   if (argc < 4) {
     printf("Error: usage: %s format fileIn fileOut\nformat := ipc_file ipc_stream\n", argv[0]);
-    printf("              %s write format fileOut\nformat := ipc_(file|stream)[_list64|_fixlist]\n", argv[0]);
+    printf("              %s write format fileOut\nformat := ipc_(file|stream)\n", argv[0]);
     return 1;
   }
   std::string op = argv[1];
@@ -213,29 +370,33 @@ int main(int argc, char **argv) {
   bool verbose = true;
   auto tstart = std::chrono::steady_clock::now();
   //increase verbosity to see how long this is taking
-  auto verbosity = ROOT::Experimental::RLogScopedVerbosity(
-      ROOT::Detail::RDF::RDFLogChannel(),
-      verbose ? ROOT::Experimental::ELogLevel::kInfo : ROOT::Experimental::ELogLevel::kWarning);
+  auto verbosity = ROOT::Experimental::RLogScopedVerbosity(ROOT::Detail::RDF::RDFLogChannel(),
+                                                           ROOT::Experimental::ELogLevel::kWarning);
   // and suppress RNTuple verbosity
   auto rntVerbosity =
       ROOT::Experimental::RLogScopedVerbosity(ROOT::Experimental::NTupleLog(), ROOT::Experimental::ELogLevel::kError);
 
-  unsigned long int ntot, npass;
+  unsigned long int ntot, ncheck, npass;
   if (format.find("ipc_file") == 0) {
     ROOT::RDataFrame d = ROOT::RDF::FromArrowIPCFile(fileIn, {});
-    analyze(d, ntot, npass, fileOut);
+    analyze(d, ntot, ncheck, npass, fileOut);
   } else if (format.find("ipc_stream") == 0) {
     ROOT::RDataFrame d = ROOT::RDF::FromArrowIPCStream(fileIn, {});
-    analyze(d, ntot, npass, fileOut);
+    analyze(d, ntot, ncheck, npass, fileOut);
+  } else  {
+    std::cout << " Unsupported format " << format << std::endl;
+    return 1;
   }
 
   double dt = (std::chrono::duration<double>(std::chrono::steady_clock::now() - tstart)).count();
-  printf("Run on file %s, %lu events, selected %lu events (%.4f), time %.3fs\n",
+  printf("Run on file %s, %lu events, validated %lu events (%.4f), selected %lu events (%.4f), time %.3fs\n",
          fileIn.c_str(),
          ntot,
+         ncheck,
+         ncheck / float(ntot),
          npass,
          npass / float(ntot),
          dt);
 
-  return 0;
+  return ntot > 0 && ncheck == ntot && npass > 0 && npass < ntot;
 }
