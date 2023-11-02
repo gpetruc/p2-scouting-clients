@@ -95,9 +95,11 @@ DATAFILE ?= ../data/Puppi.dump
 TREEFILE = $(OUTDIR)/ttree.root
 TREE24FILE = $(OUTDIR)/ttree_24.root
 TREEINTFILE = $(OUTDIR)/ttree_int.root
+TREE64FILE = $(OUTDIR)/ttree_raw64.root
 RNTCFILE = $(OUTDIR)/rnt_coll.root
 RNTVFILE = $(OUTDIR)/rnt_vec.root
 RNTVIFILE = $(OUTDIR)/rnt_vec_int.root
+RNTV64FILE = $(OUTDIR)/rnt_raw64.root
 ARRFILE = $(OUTDIR)/ipc.float.arrow
 OUTDIR ?= /run/user/$$UID
 
@@ -106,9 +108,11 @@ run_test_speed: ./run.exe
 	../rootUnpacker.exe puppi ttree float $(DATAFILE) $(TREEFILE) > /dev/null
 	../rootUnpacker.exe puppi ttree float24 $(DATAFILE) $(TREE24FILE) > /dev/null
 	../rootUnpacker.exe puppi ttree int $(DATAFILE) $(TREEINTFILE) > /dev/null
+	../rootUnpacker.exe puppi ttree raw64 $(DATAFILE) $(TREE64FILE) > /dev/null
 	../rootUnpacker.exe puppi rntuple coll_float $(DATAFILE) $(RNTCFILE) > /dev/null
 	../rootUnpacker.exe puppi rntuple floats $(DATAFILE) $(RNTVFILE) > /dev/null
 	../rootUnpacker.exe puppi rntuple ints $(DATAFILE) $(RNTVIFILE) > /dev/null
+	../rootUnpacker.exe puppi rntuple raw64 $(DATAFILE) $(RNTV64FILE) > /dev/null
 ifdef ARROW_INCLUDE
 	../../apache/apacheUnpacker.exe puppi ipcstream float $(DATAFILE) $(ARRFILE) > /dev/null
 endif	
@@ -116,9 +120,11 @@ endif
 	./run.exe w3piExample2022 loose $(TREEFILE) -f tree 
 	./run.exe w3piExample2022 loose $(TREE24FILE) -f tree 
 	./run.exe w3piExample2022 loose $(TREEINTFILE) -f tree_int 
+	./run.exe w3piExample2022 loose $(TREE64FILE) -f tree_raw64 
 	./run.exe w3piExample2022 loose $(RNTCFILE) -f rntuple_coll
 	./run.exe w3piExample2022 loose $(RNTVFILE) -f rntuple_vec
 	./run.exe w3piExample2022 loose $(RNTVIFILE) -f rntuple_vec_int
+	./run.exe w3piExample2022 loose $(RNTV64FILE) -f rntuple_raw64
 ifdef ARROW_INCLUDE
 	./run.exe w3piExample2022 loose $(ARRFILE) -f arrow_stream
 endif	
@@ -130,9 +136,11 @@ endif
 	./run.exe w3piExample2022 loose $(TREEFILE) -f tree -o snapshot $(OUTDIR)/snapshot.root
 	./run.exe w3piExample2022 loose $(TREE24FILE) -f tree   -o snapshot $(OUTDIR)/snapshot24.root
 	./run.exe w3piExample2022 loose $(TREEINTFILE) -f tree_int  -o snapshot $(OUTDIR)/snapshotInt.root
+	./run.exe w3piExample2022 loose $(TREE64FILE) -f tree_raw64  -o snapshot $(OUTDIR)/snapshotRaw64.root
 	./run.exe w3piExample2022 loose $(RNTCFILE) -f rntuple_coll -o snapshot $(OUTDIR)/snapshot_fromRN.root
 	./run.exe w3piExample2022 loose $(RNTVFILE) -f rntuple_vec -o snapshot $(OUTDIR)/snapshot_fromRNv.root
 	./run.exe w3piExample2022 loose $(RNTVIFILE) -f rntuple_vec_int -o snapshot $(OUTDIR)/snapshot_fromRNv.root
+	./run.exe w3piExample2022 loose $(RNTV64FILE) -f rntuple_raw64 -o snapshot $(OUTDIR)/snapshot_fromRNv.root
 ifdef ARROW_INCLUDE
 	./run.exe w3piExample2022 loose $(ARRFILE) -f arrow_stream -o snapshot $(OUTDIR)/snapshot_fromArr.root
 endif	

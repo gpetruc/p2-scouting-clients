@@ -104,10 +104,40 @@ private:
     }
     return ret;
   }
+  inline static ROOT::RVec<float> unpackPtFromRaw(const ROOT::RVec<ULong64_t> &data) {
+    ROOT::RVec<float> ret(data.size());
+    for (int i = 0, n = ret.size(); i < n; ++i) {
+      ret[i] = uint16_t(data[i] & 0x3FFF) * 0.25f;
+    }
+    return ret;
+  }
   inline static ROOT::RVec<float> unpackEtaPhi(const ROOT::RVec<int16_t> &etaphi) {
     ROOT::RVec<float> ret(etaphi.size());
     for (int i = 0, n = ret.size(); i < n; ++i) {
       ret[i] = etaphi[i] * float(M_PI / 720.);
+    }
+    return ret;
+  }
+  inline static ROOT::RVec<float> unpackEtaFromRaw(const ROOT::RVec<ULong64_t> &data) {
+    ROOT::RVec<float> ret(data.size());
+    for (int i = 0, n = ret.size(); i < n; ++i) {
+      int etaint = ((data[i] >> 25) & 1) ? ((data[i] >> 14) | (-0x800)) : ((data[i] >> 14) & (0xFFF));
+      ret[i] = etaint * float(M_PI / 720.);
+    }
+    return ret;
+  }
+  inline static ROOT::RVec<float> unpackPhiFromRaw(const ROOT::RVec<ULong64_t> &data) {
+    ROOT::RVec<float> ret(data.size());
+    for (int i = 0, n = ret.size(); i < n; ++i) {
+      int phiint = ((data[i] >> 36) & 1) ? ((data[i] >> 26) | (-0x400)) : ((data[i] >> 26) & (0x7FF));
+      ret[i] = phiint * float(M_PI / 720.);
+    }
+    return ret;
+  }
+  inline static ROOT::RVec<uint8_t> unpackIDFromRaw(const ROOT::RVec<ULong64_t> &data) {
+    ROOT::RVec<short> ret(data.size());
+    for (int i = 0, n = ret.size(); i < n; ++i) {
+      ret[i] = (data[i] >> 37) & 0x7;
     }
     return ret;
   }
@@ -126,6 +156,14 @@ private:
     }
     return ret;
   }
+  inline static ROOT::RVec<float> unpackDxyFromRaw(const ROOT::RVec<ULong64_t> &data, const ROOT::RVec<uint8_t> &pid) {
+    ROOT::RVec<short> ret(data.size());
+    for (int i = 0, n = ret.size(); i < n; ++i) {
+      int dxyint = ((data[i] >> 57) & 1) ? ((data[i] >> 50) | (-0x100)) : ((data[i] >> 50) & 0xFF);
+      ret[i] = pid[i] > 1 ? (dxyint * 0.05f) : 0.0f; // placeholder units
+    }
+    return ret;
+  }
   inline static ROOT::RVec<float> unpackZ0(const ROOT::RVec<int16_t> &z0) {
     ROOT::RVec<float> ret(z0.size());
     for (int i = 0, n = ret.size(); i < n; ++i) {
@@ -133,10 +171,35 @@ private:
     }
     return ret;
   }
+  inline static ROOT::RVec<float> unpackZ0FromRaw(const ROOT::RVec<ULong64_t> &data, const ROOT::RVec<uint8_t> &pid) {
+    ROOT::RVec<short> ret(data.size());
+    for (int i = 0, n = ret.size(); i < n; ++i) {
+      int z0int = ((data[i] >> 49) & 1) ? ((data[i] >> 40) | (-0x200)) : ((data[i] >> 40) & 0x3FF);
+      ret[i] = pid[i] > 1 ? (z0int * 0.05f) : 0.0f;
+    }
+    return ret;
+  }
   inline static ROOT::RVec<float> unpackWPuppi(const ROOT::RVec<uint16_t> &wpuppi) {
     ROOT::RVec<float> ret(wpuppi.size());
     for (int i = 0, n = ret.size(); i < n; ++i) {
       ret[i] = wpuppi[i] * float(1 / 256.f);
+    }
+    return ret;
+  }
+  inline static ROOT::RVec<float> unpackWPuppiFromRaw(const ROOT::RVec<ULong64_t> &data,
+                                                      const ROOT::RVec<uint8_t> &pid) {
+    ROOT::RVec<short> ret(data.size());
+    for (int i = 0, n = ret.size(); i < n; ++i) {
+      int wpuppiint = (data[i] >> 40) & 0x3FF;
+      ret[i] = pid[i] <= 1 ? (wpuppiint * float(1 / 256.)) : 1.0f;
+    }
+    return ret;
+  }
+  inline static ROOT::RVec<uint8_t> unpackQualityFromRaw(const ROOT::RVec<ULong64_t> &data,
+                                                         const ROOT::RVec<uint8_t> &pid) {
+    ROOT::RVec<short> ret(data.size());
+    for (int i = 0, n = ret.size(); i < n; ++i) {
+      ret[i] = pid[i] <= 1 ? uint8_t((data[i] >> 50) & 0x3F) : uint8_t((data[i] >> 58) & 0x7);
     }
     return ret;
   }
