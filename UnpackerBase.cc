@@ -14,7 +14,7 @@ UnpackerBase::Report UnpackerBase::unpackFiles(const std::vector<std::string> &i
   for (auto &in : ins) {
     fins.emplace_back(in, std::ios_base::in | std::ios_base::binary);
     if (!fins.back().good()) {
-      throw std::runtime_error("Error opening " + in + " for otput");
+      throw std::runtime_error("Error opening " + in + " for input");
     }
     bytes_in += std::filesystem::file_size(in);
   }

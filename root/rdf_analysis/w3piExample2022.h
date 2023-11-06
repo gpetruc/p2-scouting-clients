@@ -18,7 +18,7 @@ public:
              const std::string &outformat,
              const std::string &outfile) const override;
 
-private:
+protected:
   struct Cuts {
     float minpt1 = 7;   // 9
     float minpt2 = 12;  // 15
@@ -31,7 +31,7 @@ private:
     float maxiso = 2.0;  //0.4
   };
 
-private:
+protected:
   Cuts cuts;
   bool verbose_;
 

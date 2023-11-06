@@ -25,7 +25,7 @@ ifdef TBB
 endif
 all: $(TARGETS)
 
-ANALYSES_SRC := analysis.cc w3piExample2022.cc
+ANALYSES_SRC := analysis.cc w3piExample2022.cc 
 ANALYSES_OBJ := $(ANALYSES_SRC:.cc=.o)
 ANALYSES_H := $(ANALYSES_SRC:.cc=.h)
 
@@ -36,6 +36,10 @@ endif
 
 $(ANALYSES_OBJ): %.o: %.cc %.h analysis.h $(EXTRA_HEADERS)
 	$(CC) $(CCFLAGS) -c $< -o $@
+
+w3piExample2022Raw.o: w3piExample2022Raw.cc w3piExample2022Raw.h analysis.h w3piExample2022.h
+	$(CC) $(CCFLAGS) -c $< -o $@
+EXTRA_OBJS += w3piExample2022Raw.o
 
 run.exe: run.cc $(ANALYSES_OBJ) $(EXTRA_OBJS)
 	$(CC) $(CCFLAGS) $^ $(LIBS) -o $@
