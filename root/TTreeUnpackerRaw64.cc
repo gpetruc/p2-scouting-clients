@@ -6,7 +6,7 @@ void TTreeUnpackerRaw64::bookOutput(const std::string &out) {
   bookOutputBase(out);
   uint64_t dummy[1];
   if (tree_) {
-    branch_ = tree_->Branch("Puppi_packed", dummy, "Puppi_packed[nPuppi]/l");
+    branch_ = tree_->Branch("Puppi", dummy, "Puppi[nPuppi]/l");
   }
 }
 

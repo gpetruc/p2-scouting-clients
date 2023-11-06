@@ -191,21 +191,23 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
   ROOT::RDF::RNode d = top;
   bool isInt = (format.length() >= 4 && format.substr(format.length() - 4) == "_int");
   bool isDot = (format.find("rntuple_coll") != std::string::npos || format.find("arrow") != std::string::npos);
+  bool isArrow = format.find("arrow") == 0;
   const std::string sep = isDot ? "." : "_";
+  auto defineNPuppi = [isArrow](ROOT::RDF::RNode &d) {
+    return isArrow ? d.Define("nPuppi", [](uint32_t n) { return uint16_t(n); }, {"#Puppi"})
+                   : d.Alias("nPuppi", "#Puppi");
+  };
   if (format.find("raw64") != std::string::npos) {
-    if (format.find("arrow") == 0)
-      d = d.Alias("nPuppi", "#Puppi").Alias("Puppi_packed", "Puppi");
-    if (format.find("rntuple") != std::string::npos)
-      d = d.Alias("nPuppi", "#Puppi_packed");
-    d = d.Define("Puppi_pt", unpackPtFromRaw, {"Puppi_packed"})
-            .Define("Puppi_eta", unpackEtaFromRaw, {"Puppi_packed"})
-            .Define("Puppi_phi", unpackPhiFromRaw, {"Puppi_packed"})
-            .Define("Puppi_pid", unpackIDFromRaw, {"Puppi_packed"})
+    d = (format.find("tree") == 0 ? d : defineNPuppi(d))
+            .Define("Puppi_pt", unpackPtFromRaw, {"Puppi"})
+            .Define("Puppi_eta", unpackEtaFromRaw, {"Puppi"})
+            .Define("Puppi_phi", unpackPhiFromRaw, {"Puppi"})
+            .Define("Puppi_pid", unpackIDFromRaw, {"Puppi"})
             .Define("Puppi_pdgId", unpackPID, {"Puppi_pid"})
-            .Define("Puppi_dxy", unpackDxyFromRaw, {"Puppi_packed", "Puppi_pid"})
-            .Define("Puppi_z0", unpackZ0FromRaw, {"Puppi_packed", "Puppi_pid"})
-            .Define("Puppi_wpuppi", unpackWPuppiFromRaw, {"Puppi_packed", "Puppi_pid"})
-            .Define("Puppi_quality", unpackQualityFromRaw, {"Puppi_packed", "Puppi_pid"});
+            .Define("Puppi_dxy", unpackDxyFromRaw, {"Puppi", "Puppi_pid"})
+            .Define("Puppi_z0", unpackZ0FromRaw, {"Puppi", "Puppi_pid"})
+            .Define("Puppi_wpuppi", unpackWPuppiFromRaw, {"Puppi", "Puppi_pid"})
+            .Define("Puppi_quality", unpackQualityFromRaw, {"Puppi", "Puppi_pid"});
   } else if (isInt) {
     // need to copy-paste stuff as Aliases, Define & Redefine don't play well enough together yet
     if (!isDot) {
@@ -217,14 +219,15 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
               .Redefine("Puppi_z0", unpackZ0, {"Puppi_z0"})
               .Redefine("Puppi_wpuppi", unpackWPuppi, {"Puppi_wpuppi"});
     } else {
-      d = d.Alias("nPuppi", "#Puppi")
+      d = defineNPuppi(d)
               .Define("Puppi_pt", unpackPt, {"Puppi.pt"})
               .Define("Puppi_eta", unpackEtaPhi, {"Puppi.eta"})
               .Define("Puppi_phi", unpackEtaPhi, {"Puppi.phi"})
               .Define("Puppi_pdgId", unpackPID, {"Puppi.pid"})
               .Define("Puppi_dxy", unpackDxy, {"Puppi.dxy"})
               .Define("Puppi_z0", unpackZ0, {"Puppi.z0"})
-              .Define("Puppi_wpuppi", unpackWPuppi, {"Puppi.wpuppi"});
+              .Define("Puppi_wpuppi", unpackWPuppi, {"Puppi.wpuppi"})
+              .Alias("Puppi_quality", "Puppi.quality");
     }
   } else if (format == "mc") {
     d = d.Alias("Puppi_pt", "L1Puppi_pt")
@@ -236,7 +239,7 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
             .Alias("Puppi_wpuppi", "L1Puppi_wpuppi")
             .Alias("Puppi_quality", "L1Puppi_quality");
   } else if (isDot) {
-    d = d.Alias("nPuppi", "#Puppi")
+    d = defineNPuppi(d)
             .Alias("Puppi_pt", "Puppi.pt")
             .Alias("Puppi_eta", "Puppi.eta")
             .Alias("Puppi_phi", "Puppi.phi")

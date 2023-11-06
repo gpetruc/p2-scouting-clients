@@ -9,12 +9,12 @@ TARGETS := data_checker.exe  data_generator.exe libunpackerBase.so
 SUBS :=
 
 ifeq ($(USE_ROOT), 1)
-	TARGETS += root/librootUnpacker.so
+	TARGETS += root/librootUnpacker.so root/rootUnpacker.exe
 	CCFLAGS += -DUSE_ROOT=1
 endif
 
 ifeq ($(USE_APACHE), 1)
-	TARGETS += apache/libapacheUnpacker.so
+	TARGETS += apache/libapacheUnpacker.so apache/apacheUnpacker.exe
 	CCFLAGS += -DUSE_APACHE=1
 endif
 
@@ -61,9 +61,13 @@ endif
 
 root/librootUnpacker.so:
 	cd root && $(MAKE) librootUnpacker.so
+root/rootUnpacker.exe:
+	cd root && $(MAKE) rootUnpacker.exe
 
 apache/libapacheUnpacker.so:
 	cd apache && $(MAKE) libapacheUnpacker.so
+apache/apacheUnpacker.exe:
+	cd apache && $(MAKE) apacheUnpacker.exe
 
 UnpackerBase.o: UnpackerBase.cc unpack.h UnpackerBase.h
 	$(CC) -fPIC $(CCFLAGS) -c $< -o $@

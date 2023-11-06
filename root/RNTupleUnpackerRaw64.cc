@@ -4,7 +4,7 @@
 
 void RNTupleUnpackerRaw64::bookOutput(const std::string &out) {
   auto model = modelBase();
-  p_data = model->MakeField<ROOT::RVec<uint64_t>>("Puppi_packed");
+  p_data = model->MakeField<ROOT::RVec<uint64_t>>("Puppi");
   bookBase(out, std::move(model));
 }
 
