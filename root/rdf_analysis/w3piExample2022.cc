@@ -76,13 +76,14 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
                           const ROOT::RVec<float> &pts,
                           const ROOT::RVec<float> &etas,
                           const ROOT::RVec<float> &phis) {
-    ROOT::RVec<ROOT::RVec<unsigned int>> triplets;  //stores all passing triplets (best one selected at the end)
-    ROOT::RVec<unsigned int> ix;                    //pion indeces
-    ROOT::RVec<int> icharge;                        //pion charges
-    ROOT::RVec<float> ptsums;
+    ROOT::RVec<unsigned int> ix;  //pion indeces
+    ROOT::RVec<int> icharge;      //pion charges
     ROOT::RVec<unsigned int> iso(
         pdgids.size(),
         0);  //stores whether a particle passes isolation test so we don't calculate reliso twice
+
+    ROOT::RVec<unsigned int> bestTriplet;  //triplet of indeces
+    float bestPtSum = -1;
 
     for (unsigned int i = 0, n = pdgids.size(); i < n; ++i) {  //make list of all hadrons
       if ((std::abs(pdgids[i]) == 211 or std::abs(pdgids[i]) == 11) and pts[i] >= cuts.minpt1) {
@@ -143,9 +144,11 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
                     }
                   }
                   if (isop == true) {
-                    triplets.push_back(tr);
                     ptsum = pts[tr[0]] + pts[tr[1]] + pts[tr[2]];
-                    ptsums.push_back(ptsum);
+                    if (ptsum > bestPtSum) {
+                      bestPtSum = ptsum;
+                      bestTriplet = tr;
+                    }
                   }  // iso
                 }    // delta R
               }      // mass
@@ -155,22 +158,7 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
       }              //high pt cut
     }                //if 3 or more pions
 
-    if (triplets.empty())
-      triplets.emplace_back();
-    if (triplets.size() == 1)
-      return triplets[0];
-
-    //if there are multiple triplets passing, choose the best
-    float bestscore = 0;
-    unsigned int best = 0;  //index of best triplet in triplet array
-    for (unsigned int i = 0, n = triplets.size(); i < n; ++i) {
-      float score = ptsums[i];
-      if (score > bestscore) {
-        bestscore = score;
-        best = i;
-      }
-    }
-    return triplets[best];
+    return bestTriplet;
   };
 
   std::vector<std::string> outputs = {"run",

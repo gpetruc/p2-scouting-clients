@@ -12,6 +12,7 @@
 #include <tbb/pipeline.h>
 #include "analysis.h"
 #include "w3piExample2022.h"
+#include "w3piExample2022Raw.h"
 
 void usage() {
   printf("Usage: liveUnpacker.exe [ options ] analysis [arguments] /path/to/input /path/to/outputs \n");
@@ -78,7 +79,8 @@ public:
       output = outPath_ + "/" + inputs.front().substr(inputs.front().rfind('/') + 1);
       if (output.length() > 6 && output.substr(output.length() - 6) == ".taken")
         output = output.substr(0, output.length() - 6);
-      if (output.length() > 5 && output.substr(output.length() - 5) == ".root") {
+      if (output.length() > 5 &&
+          (output.substr(output.length() - 5) == ".root" || output.substr(output.length() - 5) == ".dump")) {
         if (outFormat_.substr(0, 3) == "raw") {
           output = output.substr(0, output.length() - 5) + ".raw";
         } else {
@@ -170,8 +172,10 @@ private:
           if (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO)) {
             if (!(event->mask & IN_ISDIR)) {
               std::string fname = event->name;
-              if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".root" &&
-                  (fname.length() < 9 || fname.substr(fname.length() - 9) != ".tmp.root")) {
+              if (fname.length() > 5 &&
+                  (fname.substr(fname.length() - 5) == ".root" || fname.substr(fname.length() - 5) == ".dump") &&
+                  (fname.length() < 9 || (fname.substr(fname.length() - 9) != ".tmp.root" &&
+                                          (fname.substr(fname.length() - 9) != ".dump.tmp")))) {
                 std::string in(from_ + "/" + fname);
                 if (std::filesystem::exists(in)) {
                   std::filesystem::rename(in, in + ".taken");
@@ -274,13 +278,16 @@ int main(int argc, char **argv) {
   int iarg = optind, narg = argc - optind;
   std::string analysis = std::string(argv[iarg++]);
   std::unique_ptr<rdfAnalysis> analyzer;
-  if (analysis == "w3piExample2022") {
+  if (analysis == "w3piExample2022" || analysis == "w3piExample2022Raw") {
     std::string cuts = std::string(argv[iarg++]);
     if (cuts != "tight" && cuts != "loose") {
       printf("w3piExample2022 analysis requires to specify a set of cuts (\"tight\", \"loose\")\n");
       return 1;
     }
-    analyzer = std::make_unique<w3piExample2022>(cuts, false);
+    if (analysis == "w3piExample2022")
+      analyzer = std::make_unique<w3piExample2022>(cuts, false);
+    else if (analysis == "w3piExample2022Raw")
+      analyzer = std::make_unique<w3piExample2022Raw>(cuts, false);
     printf("Running analysis %s with cuts %s\n", analysis.c_str(), cuts.c_str());
   } else {
     printf("Unknown analysis %s\n", analysis.c_str());
