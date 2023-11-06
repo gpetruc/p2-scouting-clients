@@ -190,7 +190,13 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
                                       "Triplet_Mass"};
   ROOT::RDF::RNode d = top;
   bool isInt = (format.length() >= 4 && format.substr(format.length() - 4) == "_int");
+  bool isDot = (format.find("rntuple_coll") != std::string::npos || format.find("arrow") != std::string::npos);
+  const std::string sep = isDot ? "." : "_";
   if (format.find("raw64") != std::string::npos) {
+    if (format.find("arrow") == 0)
+      d = d.Alias("nPuppi", "#Puppi").Alias("Puppi_packed", "Puppi");
+    if (format.find("rntuple") != std::string::npos)
+      d = d.Alias("nPuppi", "#Puppi_packed");
     d = d.Define("Puppi_pt", unpackPtFromRaw, {"Puppi_packed"})
             .Define("Puppi_eta", unpackEtaFromRaw, {"Puppi_packed"})
             .Define("Puppi_phi", unpackPhiFromRaw, {"Puppi_packed"})
@@ -200,21 +206,28 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
             .Define("Puppi_z0", unpackZ0FromRaw, {"Puppi_packed", "Puppi_pid"})
             .Define("Puppi_wpuppi", unpackWPuppiFromRaw, {"Puppi_packed", "Puppi_pid"})
             .Define("Puppi_quality", unpackQualityFromRaw, {"Puppi_packed", "Puppi_pid"});
-    if (format.find("rntuple") != std::string::npos)
-      d = d.Alias("nPuppi", "#Puppi_packed");
-  } else if (format.find("rntuple_coll") != std::string::npos || format.find("arrow") != std::string::npos) {
-    d = d.Alias("nPuppi", "#Puppi")
-            .Alias("Puppi_pt", "Puppi.pt")
-            .Alias("Puppi_eta", "Puppi.eta")
-            .Alias("Puppi_phi", "Puppi.phi")
-            .Alias("Puppi_dxy", "Puppi.dxy")
-            .Alias("Puppi_z0", "Puppi.z0")
-            .Alias(isInt ? "Puppi_pid" : "Puppi_pdgId", isInt ? "Puppi.pid" : "Puppi.pdgId")
-            .Alias("Puppi_wpuppi", "Puppi.wpuppi")
-            .Alias("Puppi_quality", "Puppi.quality");
+  } else if (isInt) {
+    // need to copy-paste stuff as Aliases, Define & Redefine don't play well enough together yet
+    if (!isDot) {
+      d = d.Redefine("Puppi_pt", unpackPt, {"Puppi_pt"})
+              .Redefine("Puppi_eta", unpackEtaPhi, {"Puppi_eta"})
+              .Redefine("Puppi_phi", unpackEtaPhi, {"Puppi_phi"})
+              .Define("Puppi_pdgId", unpackPID, {"Puppi_pid"})
+              .Redefine("Puppi_dxy", unpackDxy, {"Puppi_dxy"})
+              .Redefine("Puppi_z0", unpackZ0, {"Puppi_z0"})
+              .Redefine("Puppi_wpuppi", unpackWPuppi, {"Puppi_wpuppi"});
+    } else {
+      d = d.Alias("nPuppi", "#Puppi")
+              .Define("Puppi_pt", unpackPt, {"Puppi.pt"})
+              .Define("Puppi_eta", unpackEtaPhi, {"Puppi.eta"})
+              .Define("Puppi_phi", unpackEtaPhi, {"Puppi.phi"})
+              .Define("Puppi_pdgId", unpackPID, {"Puppi.pid"})
+              .Define("Puppi_dxy", unpackDxy, {"Puppi.dxy"})
+              .Define("Puppi_z0", unpackZ0, {"Puppi.z0"})
+              .Define("Puppi_wpuppi", unpackWPuppi, {"Puppi.wpuppi"});
+    }
   } else if (format == "mc") {
-    d = d.Alias("nPuppi", "#Puppi")
-            .Alias("Puppi_pt", "L1Puppi_pt")
+    d = d.Alias("Puppi_pt", "L1Puppi_pt")
             .Alias("Puppi_eta", "L1Puppi_eta")
             .Alias("Puppi_phi", "L1Puppi_phi")
             .Alias("Puppi_dxy", "L1Puppi_dxy")
@@ -222,16 +235,18 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
             .Define("Puppi_pdgId", convertIds, {"L1Puppi_pdgId"})
             .Alias("Puppi_wpuppi", "L1Puppi_wpuppi")
             .Alias("Puppi_quality", "L1Puppi_quality");
+  } else if (isDot) {
+    d = d.Alias("nPuppi", "#Puppi")
+            .Alias("Puppi_pt", "Puppi.pt")
+            .Alias("Puppi_eta", "Puppi.eta")
+            .Alias("Puppi_phi", "Puppi.phi")
+            .Alias("Puppi_dxy", "Puppi.dxy")
+            .Alias("Puppi_z0", "Puppi.z0")
+            .Alias("Puppi_pdgId", "Puppi.pdgId")
+            .Alias("Puppi_wpuppi", "Puppi.wpuppi")
+            .Alias("Puppi_quality", "Puppi.quality");
   }
-  if (isInt) {
-    d = d.Redefine("Puppi_pt", unpackPt, {"Puppi_pt"})
-            .Redefine("Puppi_eta", unpackEtaPhi, {"Puppi_eta"})
-            .Redefine("Puppi_phi", unpackEtaPhi, {"Puppi_phi"})
-            .Define("Puppi_pdgId", unpackPID, {"Puppi_pid"})
-            .Redefine("Puppi_dxy", unpackDxy, {"Puppi_dxy"})
-            .Redefine("Puppi_z0", unpackZ0, {"Puppi_z0"})
-            .Redefine("Puppi_wpuppi", unpackWPuppi, {"Puppi_wpuppi"});
-  }
+
   auto c0 = d.Count();
   auto d1 = d.Filter(initptcut, {"Puppi_pt", "Puppi_pdgId"});
   auto c1 = d1.Count();
