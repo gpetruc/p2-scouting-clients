@@ -160,7 +160,7 @@ private:
     ROOT::RVec<short> ret(data.size());
     for (int i = 0, n = ret.size(); i < n; ++i) {
       int dxyint = ((data[i] >> 57) & 1) ? ((data[i] >> 50) | (-0x100)) : ((data[i] >> 50) & 0xFF);
-      ret[i] = pid[i] > 1 ? (dxyint * 0.05f) : 0.0f; // placeholder units
+      ret[i] = pid[i] > 1 ? (dxyint * 0.05f) : 0.0f;  // placeholder units
     }
     return ret;
   }

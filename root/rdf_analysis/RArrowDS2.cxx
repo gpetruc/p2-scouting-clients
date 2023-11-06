@@ -199,6 +199,76 @@ namespace ROOT {
         }
       };
 
+      template <typename RootType, typename ArrowArrayType, typename ArrowInnerListType, typename ArrowOuterListType>
+      class RArrowListReader2D : public ROOT::Detail::RDF::RColumnReaderBase, RArrowColumnReaderBase {
+      private:
+        std::shared_ptr<ArrowOuterListType> fOuterListArray;
+        std::shared_ptr<ArrowInnerListType> fInnerListArray;
+        std::shared_ptr<ArrowArrayType> fArray;
+        Long64_t fEntry;
+        ROOT::RVec<ROOT::RVec<RootType>> fCache;
+
+      public:
+        RArrowListReader2D(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
+            : RArrowColumnReaderBase(source, addr), fEntry(std::numeric_limits<Long64_t>::max()) {}
+        virtual ~RArrowListReader2D() {}
+        template <typename T, typename O>
+        void fillRVec(int64_t arrowEntry, O offs, O length) {}
+        void *GetImpl(Long64_t entry) override {
+          if (entry != fEntry) {
+            if (maybeFetch(entry, fOuterListArray))
+              fInnerListArray = std::static_pointer_cast<ArrowInnerListType>(fOuterListArray->values());
+            fArray = std::static_pointer_cast<ArrowArrayType>(fInnerListArray->values());
+            int64_t arrowEntry = entry - fFirstEntry;
+            auto offs = fOuterListArray->value_offset(arrowEntry);
+            auto length = fOuterListArray->value_offset(arrowEntry + 1) - offs;
+            fCache.resize(length);
+            for (auto i = 0; i < length; ++i) {
+              auto offs2 = fInnerListArray->value_offset(offs);
+              auto length2 = fInnerListArray->value_offset(++offs) - offs2;
+              RVecFiller<RootType, ArrowArrayType>::fill(fCache[i], *fArray, offs2, length2);
+            }
+            fEntry = entry;
+          }
+          return (void *)(&fCache);
+        }
+      };
+      template <typename RootType, typename ArrowArrayType, typename ArrowInnerListType>
+      std::unique_ptr<ROOT::Detail::RDF::RColumnReaderBase> makeRArrowListReader2DInner(
+          ROOT::RDF::RArrowDS2 *source,
+          const ROOT::RDF::RArrowDS2::ColumnAddress &addr,
+          const arrow::BaseListType &outer) {
+        if (outer.id() == arrow::Type::LIST) {
+          return std::make_unique<RArrowListReader2D<RootType, ArrowArrayType, ArrowInnerListType, arrow::ListArray>>(
+              source, addr);
+        } else if (outer.id() == arrow::Type::LARGE_LIST) {
+          return std::make_unique<
+              RArrowListReader2D<RootType, ArrowArrayType, ArrowInnerListType, arrow::LargeListArray>>(source, addr);
+        } else if (outer.id() == arrow::Type::FIXED_SIZE_LIST) {
+          return std::make_unique<
+              RArrowListReader2D<RootType, ArrowArrayType, ArrowInnerListType, arrow::FixedSizeListArray>>(source,
+                                                                                                           addr);
+        } else {
+          return std::unique_ptr<ROOT::Detail::RDF::RColumnReaderBase>();
+        }
+      }
+      template <typename RootType, typename ArrowArrayType>
+      std::unique_ptr<ROOT::Detail::RDF::RColumnReaderBase> makeRArrowListReader2D(
+          ROOT::RDF::RArrowDS2 *source,
+          const ROOT::RDF::RArrowDS2::ColumnAddress &addr,
+          const arrow::BaseListType &inner,
+          const arrow::BaseListType &outer) {
+        if (inner.id() == arrow::Type::LIST) {
+          return makeRArrowListReader2DInner<RootType, ArrowArrayType, arrow::ListArray>(source, addr, outer);
+        } else if (inner.id() == arrow::Type::LARGE_LIST) {
+          return makeRArrowListReader2DInner<RootType, ArrowArrayType, arrow::LargeListArray>(source, addr, outer);
+        } else if (inner.id() == arrow::Type::FIXED_SIZE_LIST) {
+          return makeRArrowListReader2DInner<RootType, ArrowArrayType, arrow::FixedSizeListArray>(source, addr, outer);
+        } else {
+          return std::unique_ptr<ROOT::Detail::RDF::RColumnReaderBase>();
+        }
+      }
+
       /// Helper to get the human readable name of type
       class RDFTypeNameGetter : public ::arrow::TypeVisitor {
       private:
@@ -283,11 +353,38 @@ namespace ROOT {
         using ::arrow::TypeVisitor::Visit;
       };
 
+      template <typename T>
+      struct AlternativeSupportedType {
+        typedef T type;
+      };
+      template <>
+      struct AlternativeSupportedType<Long64_t> {
+        typedef int64_t type;
+      };
+      template <>
+      struct AlternativeSupportedType<ULong64_t> {
+        typedef uint64_t type;
+      };
+      template <>
+      struct AlternativeSupportedType<Char_t> {
+        typedef int8_t type;
+      };
+      template <>
+      struct AlternativeSupportedType<UChar_t> {
+        typedef uint8_t type;
+      };
+      template <typename T>
+      struct AlternativeSupportedType<ROOT::RVec<T>> {
+        typedef typename AlternativeSupportedType<T>::type alternative_element_type;
+        typedef ROOT::RVec<alternative_element_type> type;
+      };
       /// Helper to make the necessary reader type.
       class ReaderMaker : public ::arrow::TypeVisitor {
       public:
-        ReaderMaker(ROOT::RDF::RArrowDS2 *source, const ROOT::RDF::RArrowDS2::ColumnAddress &addr)
-            : fSource(source), fAddr(&addr), fLevel(0) {}
+        ReaderMaker(ROOT::RDF::RArrowDS2 *source,
+                    const ROOT::RDF::RArrowDS2::ColumnAddress &addr,
+                    const std::type_info &cppType)
+            : fSource(source), fAddr(&addr), fCppType(&cppType), fLevel(0) {}
         virtual arrow::Status Visit(const arrow::Int64Type &) override { return make<Long64_t, arrow::Int64Array>(); }
         virtual arrow::Status Visit(const arrow::UInt64Type &) override {
           return make<ULong64_t, arrow::UInt64Array>();
@@ -326,6 +423,7 @@ namespace ROOT {
       private:
         ROOT::RDF::RArrowDS2 *fSource;
         const ROOT::RDF::RArrowDS2::ColumnAddress *fAddr;
+        const std::type_info *fCppType;
         std::unique_ptr<ROOT::Detail::RDF::RColumnReaderBase> fReader;
         std::vector<const arrow::BaseListType *> fListStack;
         unsigned int fLevel = 0;
@@ -333,9 +431,18 @@ namespace ROOT {
         template <typename RT, typename AT>
         arrow::Status make() {
           if (fLevel == 0) {
+            if (*fCppType != typeid(RT) && *fCppType != typeid(typename AlternativeSupportedType<RT>::type)) {
+              return arrow::Status::TypeError(std::string("Bad type for scalar, found ") + typeid(RT).name() +
+                                              ", requested " + fCppType->name());
+            }
             fReader = std::make_unique<RArrowScalarReader<RT, AT>>(fSource, *fAddr);
             return arrow::Status::OK();
           } else if (fLevel == 1) {
+            if (*fCppType != typeid(ROOT::RVec<RT>) &&
+                *fCppType != typeid(typename AlternativeSupportedType<ROOT::RVec<RT>>::type)) {
+              return arrow::Status::TypeError(std::string("Bad type for 1D vector, found ") +
+                                              typeid(ROOT::RVec<RT>).name() + ", requested " + fCppType->name());
+            }
             if (fListStack.front()->id() == arrow::Type::LIST) {
               fReader = std::make_unique<RArrowListReader<RT, AT>>(fSource, *fAddr);
             } else if (fListStack.front()->id() == arrow::Type::LARGE_LIST) {
@@ -346,6 +453,19 @@ namespace ROOT {
               return arrow::Status::NotImplemented("");
             }
             return arrow::Status::OK();
+          } else if (fLevel == 2) {
+            if (*fCppType != typeid(ROOT::RVec<ROOT::RVec<RT>>) &&
+                *fCppType != typeid(typename AlternativeSupportedType<ROOT::RVec<ROOT::RVec<RT>>>::type)) {
+              return arrow::Status::TypeError(std::string("Bad type for 2D vector, found ") +
+                                              typeid(ROOT::RVec<ROOT::RVec<RT>>).name() + ", requested " +
+                                              fCppType->name());
+            }
+            fReader = makeRArrowListReader2D<RT, AT>(fSource, *fAddr, *fListStack.back(), *fListStack.front());
+            if (fReader) {
+              return arrow::Status::OK();
+            } else {
+              return arrow::Status::NotImplemented("");
+            }
           } else {
             return arrow::Status::NotImplemented("");
           }
@@ -693,14 +813,18 @@ namespace ROOT {
 
     std::unique_ptr<ROOT::Detail::RDF::RColumnReaderBase> RArrowDS2::GetColumnReaders(unsigned int /*slot*/,
                                                                                       std::string_view columnName,
-                                                                                      const std::type_info &) {
+                                                                                      const std::type_info &cppType) {
       std::unique_ptr<ROOT::Detail::RDF::RColumnReaderBase> ret;
       auto addr = fColumnAddresses.find(std::string(columnName));
       assert(addr != fColumnAddresses.end());
       auto type = GetArrowType(addr->second);
       if (type) {
         if (columnName.substr(0, 13) == "R_rdf_sizeof_") {
-          if (type->id() == arrow::Type::LIST) {
+          if (cppType != typeid(uint32_t)) {
+            throw std::runtime_error("RArrowDS2 column " + std::string(columnName) + " arrow type " + type->ToString() +
+                                     " should be read as uint32_t, while " + std::string(cppType.name()) +
+                                     " was requested.");
+          } else if (type->id() == arrow::Type::LIST) {
             return std::make_unique<Internal::RArrowOffsetsReader<arrow::UInt32Array>>(this, addr->second);
           } else if (type->id() == arrow::Type::LARGE_LIST) {
             return std::make_unique<Internal::RArrowOffsetsReader<arrow::UInt64Array>>(this, addr->second);
@@ -712,13 +836,13 @@ namespace ROOT {
                                      " arrow type " + type->ToString());
           }
         } else {
-          Internal::ReaderMaker maker(this, addr->second);
+          Internal::ReaderMaker maker(this, addr->second, cppType);
           auto ok = type->Accept(&maker);
           if (ok.ok()) {
             return maker.result();
           } else {
             throw std::runtime_error("RArrowDS2 can't make a maker for " + std::string(columnName) + " arrow type " +
-                                     type->ToString());
+                                     type->ToString() + ": " + ": " + ok.message());
           }
         }
       } else {
