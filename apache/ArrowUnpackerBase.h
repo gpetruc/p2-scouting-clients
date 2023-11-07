@@ -14,7 +14,7 @@ class ArrowUnpackerBase : public UnpackerBase {
 public:
   ArrowUnpackerBase(unsigned int batchsize, ApacheUnpackMaker::Spec::FileKind fileKind);
   ~ArrowUnpackerBase() override {}
-  Report unpackFiles(const std::vector<std::string> &ins, const std::string &out) override;
+  Report myUnpackFiles(const std::vector<std::string> &ins, const std::string &out);
   void setThreads(unsigned int threads) override;
   void setCompression(const std::string &algo, unsigned int level) override {
     compressionMethod_ = algo;

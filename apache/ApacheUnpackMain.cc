@@ -1,5 +1,6 @@
 
 #include "ApacheUnpackMaker.h"
+#include "ArrowUnpackerBase.h"
 #include <arrow/io/api.h>
 #include <arrow/util/thread_pool.h>
 #include <getopt.h>
@@ -17,6 +18,7 @@ void usage() {
   printf("  -z algo[,level] : enable compression\n");
   printf("                    for IPC files, algorithms supported are none, lz4, zstd (if compiled in)\n");
   printf("                    default level is 4\n");
+  printf("  --cmssw         : assume CMSSW file headers\n");
 }
 
 bool is_output_fname(const std::string &fname) {
@@ -38,12 +40,15 @@ int main(int argc, char **argv) {
   std::string compressionMethod = "none";
   int compressionLevel = 0;
   unsigned long batchsize = 3564;  // default is number of BXs in one LHC orbit
+  bool cmsswHeaders = false, useBaseReadFile = false;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
                                            {"batchsize", required_argument, nullptr, 'b'},
                                            {"iothreads", required_argument, nullptr, 'J'},
                                            {"cputhreads", required_argument, nullptr, 'j'},
                                            {"compression", required_argument, nullptr, 'z'},
+                                           {"cmssw", no_argument, nullptr, 1},
+                                           {"useBaseReadFile", no_argument, nullptr, 2},
                                            {nullptr, 0, nullptr, 0}};
     int option_index = 0;
     int optc = getopt_long(argc, argv, "hj:J:b:z:", long_options, &option_index);
@@ -73,6 +78,13 @@ int main(int argc, char **argv) {
           compressionLevel = 4;
         }
       } break;
+      case 1:
+        cmsswHeaders = true;
+        useBaseReadFile = true;  // needed for CMSSW support, for now
+        break;
+      case 2:
+        useBaseReadFile = true;
+        break;
       default:
         usage();
         return 1;
@@ -109,6 +121,8 @@ int main(int argc, char **argv) {
   try {
     std::unique_ptr<UnpackerBase> unpacker =
         ApacheUnpackMaker::make(batchsize, obj, kind, format, compressionMethod, compressionLevel);
+    if (cmsswHeaders)
+      unpacker->setCMSSW(cmsswHeaders);
     if (!unpacker) {
       printf("Unsupported object type %s, file type %s and/or output format %s\n",
              obj.c_str(),
@@ -116,7 +130,8 @@ int main(int argc, char **argv) {
              format.c_str());
       return 1;
     }
-    auto report = unpacker->unpackFiles(ins, output);
+    auto report = useBaseReadFile ? unpacker->unpackFiles(ins, output)
+                                  : ((dynamic_cast<ArrowUnpackerBase &>(*unpacker)).myUnpackFiles(ins, output));
     printReport(report);
   } catch (const std::exception &e) {
     printf("Terminating an exception was raised:\n%s\n", e.what());

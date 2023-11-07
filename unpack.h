@@ -72,7 +72,7 @@ inline void readcharged(const uint64_t data, float &z0, float &dxy, uint16_t &qu
   z0 = z0int * .05f;  //conver to centimeters
 
   int dxyint = ((data >> 57) & 1) ? ((data >> 50) | (-0x100)) : ((data >> 50) & 0xFF);
-  dxy = dxyint * 0.05f;           // PLACEHOLDER
+  dxy = dxyint * 0.05f;          // PLACEHOLDER
   quality = (data >> 58) & 0x7;  //3 bits
 }
 inline void readcharged(const uint64_t data, int16_t &z0, int8_t &dxy, uint8_t &quality) {  //int
@@ -86,7 +86,7 @@ inline void readcharged(const uint64_t data, float &z0, float &dxy, uint8_t &qua
   z0 = z0int * .05f;  //conver to centimeters
 
   int dxyint = ((data >> 57) & 1) ? ((data >> 50) | (-0x100)) : ((data >> 50) & 0xFF);
-  dxy = dxyint * 0.05f;           // PLACEHOLDER
+  dxy = dxyint * 0.05f;          // PLACEHOLDER
   quality = (data >> 58) & 0x7;  //3 bits
 }
 inline void readneutral(const uint64_t data, uint16_t &wpuppi, uint16_t &id) {

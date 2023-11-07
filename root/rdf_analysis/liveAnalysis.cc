@@ -80,11 +80,11 @@ public:
       if (output.length() > 6 && output.substr(output.length() - 6) == ".taken")
         output = output.substr(0, output.length() - 6);
       if (output.length() > 5 &&
-          (output.substr(output.length() - 5) == ".root" || output.substr(output.length() - 5) == ".dump")) {
+          (output.substr(output.length() - 5) == ".root" || output.substr(output.length() - 4) == ".raw")) {
         if (outFormat_.substr(0, 3) == "raw") {
-          output = output.substr(0, output.length() - 5) + ".raw";
+          output = output.substr(0, output.rfind('.')) + ".raw";
         } else {
-          output = output.substr(0, output.length() - 5) + ".tmp.root";
+          output = output.substr(0, output.rfind('.')) + ".tmp.root";
         }
       }
     }
@@ -173,9 +173,9 @@ private:
             if (!(event->mask & IN_ISDIR)) {
               std::string fname = event->name;
               if (fname.length() > 5 &&
-                  (fname.substr(fname.length() - 5) == ".root" || fname.substr(fname.length() - 5) == ".dump") &&
-                  (fname.length() < 9 || (fname.substr(fname.length() - 9) != ".tmp.root" &&
-                                          (fname.substr(fname.length() - 9) != ".dump.tmp")))) {
+                  (fname.substr(fname.length() - 5) == ".root" || fname.substr(fname.length() - 5) == ".dump" ||
+                   fname.substr(fname.length() - 4) == ".raw") &&
+                  (fname.length() < 9 || fname.substr(fname.length() - 9) != ".tmp.root")) {
                 std::string in(from_ + "/" + fname);
                 if (std::filesystem::exists(in)) {
                   std::filesystem::rename(in, in + ".taken");

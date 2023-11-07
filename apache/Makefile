@@ -96,6 +96,12 @@ run_test_speed: apacheUnpacker.exe
 	@./apacheUnpacker.exe puppi ipcstream int $(DATAFILE) $(OUTDIR)/out.arrow
 	@./apacheUnpacker.exe puppi ipcstream raw64 $(DATAFILE) $(OUTDIR)/out.arrow
 	@./apacheUnpacker.exe tkmu ipcstream float $(TKMUDATAFILE) $(OUTDIR)/out.arrow
+	@echo "==== With output ===="
+	@./apacheUnpacker.exe puppi ipcstream float $(DATAFILE) $(OUTDIR)/out.arrow --useBaseReadFile
+	@./apacheUnpacker.exe puppi ipcstream float16 $(DATAFILE) $(OUTDIR)/out.arrow --useBaseReadFile
+	@./apacheUnpacker.exe puppi ipcstream int $(DATAFILE) $(OUTDIR)/out.arrow --useBaseReadFile
+	@./apacheUnpacker.exe puppi ipcstream raw64 $(DATAFILE) $(OUTDIR)/out.arrow --useBaseReadFile
+	@./apacheUnpacker.exe tkmu ipcstream float $(TKMUDATAFILE) $(OUTDIR)/out.arrow --useBaseReadFile
 
 run_test_comp: apacheUnpacker.exe
 	@echo "==== With compressed output ===="

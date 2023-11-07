@@ -171,8 +171,17 @@ public:
         ptr += (chunksize256 << 2);
         first = false;
       }
-      unsigned int written = writev(fd, &iovecs.front(), 2 * ipacket);
-      assert(written == (((nwords + 3) / 4) + ipacket) * 32);  // round up nwords/4 to get the number of 256-bit rows
+      int written = writev(fd, &iovecs.front(), 2 * ipacket);
+      if (written != int(((nwords + 3) / 4) + ipacket) * 32) {
+        printf(
+            "Mismatch in writing to stream, had %u words in %u packets, got %d bytes instead of %u. "
+            "Probably the receiver crashed.\n",
+            nwords,
+            ipacket,
+            written,
+            (((nwords + 3) / 4) + ipacket) * 32);
+        abort();
+      }
       if (sync_) {
         auto tend = std::chrono::steady_clock::now();
         double dt = (std::chrono::duration<double>(tend - tstart)).count();

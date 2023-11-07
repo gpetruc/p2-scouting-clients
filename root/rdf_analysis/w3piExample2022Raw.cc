@@ -147,6 +147,7 @@ rdfAnalysis::Report w3piExample2022Raw::run(const std::string & /*format*/,
   auto tstart = std::chrono::steady_clock::now();
 
   auto masshist = new TH1D("masshist", "W Boson mass from selected pions; mass (GeV/c^2)", 100, 0., 100.);
+  masshist->SetDirectory(nullptr);
   unsigned long int ntot = 0, npre = 0, npass = 0;
   TreeFiller filler;
   Data data;
@@ -169,7 +170,10 @@ rdfAnalysis::Report w3piExample2022Raw::run(const std::string & /*format*/,
 
   if (outformat == "snapshot") {
     filler.tfile = TFile::Open(outfile.c_str(), "RECREATE", "", 0);
-    filler.tree = new TTree("Events", "Events");
+    if (!filler.tfile)
+      throw std::runtime_error("Error opening " + outfile + " for output");
+    std::cout << "Running with " << infiles[0] << " -> " << outfile << std::endl;
+    filler.tree = new TTree("Events", "Events", 99, filler.tfile);
     filler.tree->Branch("run", &run, "run/s");
     filler.tree->Branch("orbit", &orbit, "orbit/i");
     filler.tree->Branch("bx", &bx, "bx/s");

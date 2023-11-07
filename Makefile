@@ -88,6 +88,7 @@ format:
 
 clean:
 	@rm *.exe *.data *.o *.so 2> /dev/null || true
+	@rm -r received_raw 2> /dev/null || true
 ifeq ($(USE_ROOT), 1)
 	@cd root && $(MAKE) clean > /dev/null
 endif
@@ -109,3 +110,17 @@ run_tests: data_checker.exe data_generator.exe
 	./data_generator.exe DTHBasic256 root/data/Puppi.dump dth256.data --orbits 100 && ./data_checker.exe DTHBasic256 dth256.data
 	bash -c "(sleep 1 && ./data_generator.exe DTHBasic256 root/data/Puppi.dump 127.0.0.1:9988 --orbits 1000 -n 2 --sync &)"
 	./data_checker.exe DTHBasic256 127.0.0.1:9988 -n 2
+	./data_generator.exe CMSSW root/data/Puppi.dump cmssw.data --orbits 100 && ./data_checker.exe CMSSW cmssw.data
+	rm -r received_raw 2> /dev/null || true
+	bash -c "(sleep 1 && ./data_generator.exe DTHBasic256 root/data/Puppi.dump 127.0.0.1:9988 --orbits 1000 -n 2 --sync &)"
+	./data_checker.exe DTHRollingReceive256 127.0.0.1:9988 received_raw --orbitBitsPerFile 9 -n 2
+	./data_checker.exe Native64SZ received_raw/run000000/run000000_ls0001_index000001_ts00.raw -t 0 
+	./data_checker.exe Native64SZ received_raw/run000000/run000000_ls0001_index000001_ts01.raw -t 1 
+	./data_checker.exe Native64SZ received_raw/run000000/run000000_ls0001_index000513_ts00.raw -t 0 
+	./data_checker.exe Native64SZ received_raw/run000000/run000000_ls0001_index000513_ts01.raw -t 1 
+	bash -c "(sleep 1 && ./data_generator.exe DTHBasic256 root/data/Puppi.dump 127.0.0.1:9988 --orbits 1000 --sync &)"
+	./data_checker.exe DTHRollingReceive256 127.0.0.1:9988 received_raw --orbitBitsPerFile 9 --cmssw  --r 37
+	./data_checker.exe CMSSW received_raw/run000037/run000037_ls0001_index000001_ts00.raw 
+	./data_checker.exe CMSSW received_raw/run000037/run000037_ls0001_index000513_ts00.raw 
+	rm -r received_raw 2> /dev/null || true
+

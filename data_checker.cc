@@ -25,6 +25,7 @@
 #include <atomic>
 #include <vector>
 #include <algorithm>
+#include <filesystem>
 
 #include <getopt.h>
 
@@ -1015,35 +1016,47 @@ class DTHRollingReceive256 : public DTHBasicChecker256 {
 public:
   DTHRollingReceive256(unsigned int orbSize_kb,
                        const char *basepath,
-                       unsigned int orbitsPerFile,
-                       unsigned int prescale = 1,
-                       bool addCMSSWHeaders = false)
+                       unsigned int orbitBitsPerLS,
+                       unsigned int orbitBitsPerFile,
+                       unsigned int prescale,
+                       bool addCMSSWHeaders = false,
+                       uint32_t runNumber = 0)
       : DTHBasicChecker256(orbSize_kb),
-        orbitsPerFile_(orbitsPerFile),
+        orbitBitsPerLS_(orbitBitsPerLS),
+        orbitBitsPerFile_(orbitBitsPerFile),
         prescale_(prescale),
+        orbitMaskPerLS_((1 << orbitBitsPerLS) - 1),
+        orbitMaskPerFile_((1 << orbitBitsPerFile) - 1),
+        addCMSSWHeaders_(addCMSSWHeaders),
+        runNumber_(runNumber),
         basepath_(basepath),
         fname_(),
         fout_(),
-        addCMSSWHeaders_(addCMSSWHeaders),
-        runNumber_(0),
         lumisectionNumber_(0),
         orbitsThisFile_(0),
-        bytesThisFile_(0) {}
+        bytesThisFile_(0) {
+    char buff[1024];
+    snprintf(buff, 1023, "%s/run%06u", basepath_.c_str(), runNumber_);
+    std::filesystem::path p = buff;
+    if (!std::filesystem::is_directory(p)) {
+      printf("Attempting to create output directory path %s\n", buff);
+      std::filesystem::create_directories(p);
+      if (!std::filesystem::is_directory(p)) {
+        printf("Attempt to create output directory path %s FAILED\n", buff);
+        throw std::runtime_error("Couldn't create path " + std::string(p));
+      }
+    }
+  }
 
   ~DTHRollingReceive256() override {}
-
-  void setCMSSW(uint32_t runNumber, uint32_t lumisectionNumber) {
-    addCMSSWHeaders_ = true;
-    runNumber_ = runNumber;
-    lumisectionNumber_ = lumisectionNumber;
-  }
 
   void closeFile() {
     if (addCMSSWHeaders_) {
       fout_.seekg(12, std::ios::beg);
-      fout_.write(reinterpret_cast<const char *>(orbitsThisFile_), sizeof(orbitsThisFile_));
+      fout_.write(reinterpret_cast<const char *>(&orbitsThisFile_), sizeof(orbitsThisFile_));
       fout_.seekg(24, std::ios::beg);
-      fout_.write(reinterpret_cast<const char *>(bytesThisFile_), sizeof(bytesThisFile_));
+      fout_.write(reinterpret_cast<const char *>(&bytesThisFile_), sizeof(bytesThisFile_));
+      fout_.seekg(0, std::ios::end);  // maybe unnecessary?
     }
     fout_.close();
     assert(fname_.length() > 4);
@@ -1056,7 +1069,15 @@ public:
       closeFile();
     }
     char buff[1024];
-    snprintf(buff, 1023, "%s.ts%02d.orb%08u.dump.tmp", basepath_.c_str(), firstbx_, orbitNo);
+    snprintf(buff,
+             1023,
+             "%s/run%06u/run%06u_ls%04u_index%06u_ts%02u.raw.tmp",
+             basepath_.c_str(),
+             runNumber_,
+             runNumber_,
+             lumisectionNumber_,
+             (orbitNo & orbitMaskPerLS_),
+             firstbx_);
     fname_ = buff;
     fout_.open(buff, std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
     printf("%02u: opening output file %s\n", id_, buff);
@@ -1145,7 +1166,8 @@ public:
           oh.err = false;
         }
         readBytes += totlen256 << 5;
-        if (!fout_.is_open() || oh.orbit % orbitsPerFile_ == orbitMux_)
+        lumisectionNumber_ = (oh.orbit >> orbitBitsPerLS_) + 1;
+        if (!fout_.is_open() || ((oh.orbit & orbitMaskPerFile_) == orbitMux_))
           newFile(oh.orbit);
         if (prescale_ != 0 && (prescale_ == 1 || oh.orbit % prescale_ == orbitMux_)) {
           if (addCMSSWHeaders_) {
@@ -1193,11 +1215,13 @@ public:
   }
 
 protected:
-  unsigned int orbitsPerFile_, prescale_;
+  unsigned int orbitBitsPerLS_, orbitBitsPerFile_, prescale_;
+  uint32_t orbitMaskPerLS_, orbitMaskPerFile_;
+  bool addCMSSWHeaders_;
+  uint32_t runNumber_;
   std::string basepath_, fname_;
   std::fstream fout_;
-  bool addCMSSWHeaders_;
-  uint32_t runNumber_, lumisectionNumber_, orbitsThisFile_;
+  uint32_t lumisectionNumber_, orbitsThisFile_;
   uint64_t bytesThisFile_;
 };
 
@@ -1499,6 +1523,10 @@ int print_usage(const char *self, int retval) {
   printf("   -k  --keep    : keep running \n");
   printf("   -n, --nclients N : runs N clients for timelices 0..N-1 with increasing port numbers\n");
   printf("   -p, --prescale N : prescale output by a factor N (save orbit %% prescale == 1)\n");
+  printf("   --orbitBitsPerLS   N : log2(Orbits) per lumisection (default 18, i.e. 256k orbits per 23s lumisection)\n");
+  printf("   --orbitBitsPerFile N : log2(Orbits) per file in rolling-receive mode (default 12, 4k orbits per file)\n");
+  printf("   -c, --cmssw    : Add CMSSW headers to received files (DTHRollingReceive256 only, for now)\n");
+  printf("   -r, --runNumber  : Run number for CMSSW headers\n");
   printf("\n");
   return retval;
 }
@@ -1527,9 +1555,10 @@ void start_and_run(std::unique_ptr<CheckerBase> &&checker,
 }
 
 int main(int argc, char **argv) {
-  int debug = 0, tmux = 6, tmux_slice = 0, orbitmux = 1, buffsize_kb = 4, orbsize_kb = 2048, nclients = 1, prescale = 1;
+  int debug = 0, tmux = 6, tmux_slice = 0, orbitmux = 1, buffsize_kb = 4, orbsize_kb = 2048, nclients = 1, prescale = 1,
+      orbitBitsPerLS = 18, orbitBitsPerFile = 14, runNumber = 0;
   unsigned int maxorbits = 10000000;
-  bool keep_running = false, zeropad = false;
+  bool keep_running = false, cmsswHeaders = false, zeropad = false;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
                                            {"keep", no_argument, nullptr, 'k'},
@@ -1542,6 +1571,10 @@ int main(int argc, char **argv) {
                                            {"orbsize", required_argument, nullptr, 'O'},
                                            {"nclients", required_argument, nullptr, 'n'},
                                            {"prescale", required_argument, nullptr, 'p'},
+                                           {"orbitBitsPerLS", required_argument, nullptr, 3},
+                                           {"orbitBitsPerFile", required_argument, nullptr, 4},
+                                           {"runNumber", required_argument, nullptr, 'r'},
+                                           {"cmssw", no_argument, nullptr, 'c'},
                                            {"zeropad", no_argument, nullptr, 'z'},
                                            {nullptr, 0, nullptr, 0}};
     /* getopt_long stores the option index here. */
@@ -1582,8 +1615,23 @@ int main(int argc, char **argv) {
       case 'p':
         prescale = std::atoi(optarg);
         break;
+      case 'r':
+        runNumber = std::atoi(optarg);
+        assert(runNumber > 0);
+        break;
+      case 3:
+        orbitBitsPerLS = std::atoi(optarg);
+        assert(orbitBitsPerLS > 0);
+        break;
+      case 4:
+        orbitBitsPerFile = std::atoi(optarg);
+        assert(orbitBitsPerFile > 0);
+        break;
       case 'k':
         keep_running = true;
+        break;
+      case 'c':
+        cmsswHeaders = true;
         break;
       case 'z':
         zeropad = true;
@@ -1629,11 +1677,12 @@ int main(int argc, char **argv) {
       }
       checker.reset(new DTHReceive256(orbsize_kb, argv[optind], prescale));
     } else if (kind == "DTHRollingReceive256") {
-      if (nargs != 4) {
-        printf("Usage: %s DTHRollingReceive256 ip:port outfile orbitsPerFile \n", argv[0]);
+      if (nargs != 3) {
+        printf("Usage: %s DTHRollingReceive256 ip:port outBasePath \n", argv[0]);
         return 3;
       }
-      checker.reset(new DTHRollingReceive256(orbsize_kb, argv[optind], std::atoi(argv[optind + 1]), prescale));
+      checker.reset(new DTHRollingReceive256(
+          orbsize_kb, argv[optind], orbitBitsPerLS, orbitBitsPerFile, prescale, cmsswHeaders, runNumber));
     } else if (kind == "CMSSW") {
       checker.reset(new CMSSWChecker());
     } else if (kind == "TrashData") {
