@@ -38,7 +38,7 @@ void ArrowUnpackerInts::unpackAndCommitBatch() {
     pid_[i] = (data_[i] >> 37) & 0x7;
     if (pid_[i] > 1) {
       readcharged(data_[i], z0_[i], dxy_[i], quality_[i]);
-      wpuppi_[i] = 0;
+      wpuppi_[i] = 256;
     } else {
       readneutral(data_[i], wpuppi_[i], quality_[i]);
       z0_[i] = 0;

@@ -38,7 +38,7 @@ void ArrowUnpackerFloats::unpackAndCommitBatch() {
     readshared(data_[i], pt_[i], eta_[i], phi_[i]);
     if (readpid(data_[i], pdgid_[i])) {
       readcharged(data_[i], z0_[i], dxy_[i], quality_[i]);
-      wpuppi_[i] = 0;
+      wpuppi_[i] = 1;
     } else {
       readneutral(data_[i], wpuppi_[i], quality_[i]);
       z0_[i] = 0;

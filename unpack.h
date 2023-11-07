@@ -53,13 +53,13 @@ inline void readshared(const uint64_t data, uint16_t &pt, int16_t &eta, int16_t 
 }
 inline void readshared(const uint64_t data, float &pt, float &eta, float &phi) {  //float
   uint16_t ptint = data & 0x3FFF;
-  pt = ptint * 0.25;
+  pt = ptint * 0.25f;
 
   int etaint = ((data >> 25) & 1) ? ((data >> 14) | (-0x800)) : ((data >> 14) & (0xFFF));
-  eta = etaint * M_PI / 720.;
+  eta = etaint * float(M_PI / 720.);
 
   int phiint = ((data >> 36) & 1) ? ((data >> 26) | (-0x400)) : ((data >> 26) & (0x7FF));
-  phi = phiint * M_PI / 720.;
+  phi = phiint * float(M_PI / 720.);
 }
 inline void readcharged(const uint64_t data, int16_t &z0, int8_t &dxy, uint16_t &quality) {  //int
   z0 = ((data >> 49) & 1) ? ((data >> 40) | (-0x200)) : ((data >> 40) & 0x3FF);
@@ -132,7 +132,7 @@ inline void readevent(std::fstream &fin,
     pid[i] = (data[i] >> 37) & 0x7;
     if (pid[i] > 1) {
       readcharged(data[i], z0[i], dxy[i], quality[i]);
-      wpuppi[i] = 0;
+      wpuppi[i] = 1;
       id[i] = 0;
     } else {
       readneutral(data[i], wpuppi[i], id[i]);
@@ -209,7 +209,7 @@ inline void readevent(std::fstream &fin,
     readshared(data[i], pt[i], eta[i], phi[i]);
     if (readpid(data[i], pdgid[i])) {
       readcharged(data[i], z0[i], dxy[i], quality[i]);
-      wpuppi[i] = 0;
+      wpuppi[i] = 256;
       id[i] = 0;
     } else {
       readneutral(data[i], wpuppi[i], id[i]);
@@ -242,7 +242,7 @@ inline void readevent(std::fstream &fin,
     readshared(data[i], pt[i], eta[i], phi[i]);
     if (readpid(data[i], pdgid[i])) {
       readcharged(data[i], z0[i], dxy[i], quality[i]);
-      wpuppi[i] = 0;
+      wpuppi[i] = 1;
     } else {
       readneutral(data[i], wpuppi[i], quality[i]);
       z0[i] = 0;
@@ -282,7 +282,7 @@ inline void readevent(std::fstream &fin,
     readshared(data[i], pt[i], eta[i], phi[i]);
     if (readpid(data[i], pdgid[i])) {
       readcharged(data[i], z0[i], dxy[i], quality[i]);
-      wpuppi[i] = 0;
+      wpuppi[i] = 1;
     } else {
       readneutral(data[i], wpuppi[i], quality[i]);
       z0[i] = 0;

@@ -42,6 +42,32 @@ Two small example data files in **DTHBasic** and **DTHBasicOA** formats are avai
    | 55-24 |  32  | orbit number |
    | 23-00 |  24  | size in 64 bit words |
 
+ * **CMSSW**: Events are in *Native64* format as before, but there are additional per-file and per-orbit headers
+
+The *per-file header* is 32 bytes long, and should match the definitions in [FRDFileHeaderContent_v2](https://github.com/cms-sw/cmssw/blob/master/IOPool/Streamer/interface/FRDFileHeader.h)
+
+   | bytes  | size | meaning |
+   |-------|------|---------|
+   | 0-7 |   8  |   `"RAW_0002"` in ASCII (`0x52, 0x41, 0x57, 0x5f 0x30, 0x30, 0x30, 0x32`) | 
+   | 8-9 | 2 | Header size in bytes (should be `32`) |
+   | 10-11 | 2 | Event type (should be `20` ) |
+   | 12-15 | 4 | Number of "events" (orbits in our case) |
+   | 16-19 | 4 | Run number |
+   | 20-23 | 4 | Lumisection number |
+   | 24-31 | 8 | File size in bytes (including all headers) |
+
+The *per-orbit header"  is 24 bytes long, and should match the definitions in [FRDEventHeader_V6](https://github.com/cms-sw/cmssw/blob/master/IOPool/Streamer/interface/FRDEventMessage.h)
+
+   | bytes  | word32 | size | meaning |
+   |-------|--|----|---------|
+   | 0-1 | 0h |  2  |   Version (`06`) | 
+   | 2-3 | 0l | 2 | Flags (`00`) |
+   | 4-7 | 1 | 4 | Run number |
+   | 8-11 | 2 | 4 | Lumisection number |
+   | 12-15 | 3| 4 | "Event" number (orbit number in our case) |
+   | 16-19 | 4 | 4 | Payload size in bytes (__NOT__ including headers) |
+   | 20-23 |5 | 4 | CRC32C (not used) |
+ 
  ## Compiling the code
 
 The standalone code in this directory depends only on a recent gcc. However, the subdirectories `root` and `apache` depend on having root and apache arrow available. The easiest way to set up your environment is to use one of the LCG builds by doing
