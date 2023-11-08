@@ -13,8 +13,8 @@ endif
 ifdef ARROW_INCLUDE
 	CCFLAGS += -I$(ARROW_INCLUDE) -I. -DUSE_ARROW=1
 	LIBS += -L$(ARROW_LIB) -larrow
-	EXTRA_HEADERS += RArrowDS2.hxx
-	EXTRA_OBJS += RArrowDS2.o 
+	EXTRA_HEADERS += RArrowDS2.hxx puppiRawArrowSource.h
+	EXTRA_OBJS += RArrowDS2.o puppiRawArrowSource.o
 endif
 
 .PHONY: clean format 
@@ -32,6 +32,9 @@ ANALYSES_H := $(ANALYSES_SRC:.cc=.h)
 ifdef ARROW_INCLUDE
 RArrowDS2.o : RArrowDS2.cxx RArrowDS2.hxx
 	$(CC) $(CCFLAGS) -c $< -o $@
+
+puppiRawArrowSource.o : puppiRawArrowSource.cc puppiRawArrowSource.h RArrowDS2.hxx
+	$(CC) $(CCFLAGS) -c $< -o $@	
 endif
 
 $(ANALYSES_OBJ): %.o: %.cc %.h analysis.h $(EXTRA_HEADERS)
@@ -108,7 +111,9 @@ ifdef ARROW_INCLUDE
 	./run.exe w3piExample2022 loose testInput.arrow -f arrow_stream  -o snapshot snapshot_arrow.root
 	./run.exe w3piExample2022 loose testInput_int.arrow -f arrow_stream_int   -o snapshot snapshot_arrow_int.root
 	./run.exe w3piExample2022 loose testInput_raw64.arrow -f arrow_stream_raw64   -o snapshot snapshot_arrow_raw64.root
+	./run.exe w3piExample2022 loose ../data/Puppi.dump -f arrow_raw_raw64   -o snapshot snapshot_arrow_raw_raw64.root
 endif
+	./run.exe w3piExample2022Raw loose ../data/Puppi.dump  -o snapshot snapshot_raw.root
 
 DATAFILE ?= ../data/Puppi.dump
 TREEFILE = $(OUTDIR)/ttree.root
@@ -176,3 +181,8 @@ endif
 ifdef ARROW_INCLUDE
 	./run.exe w3piExample2022 loose $(ARRFILE) -f arrow_stream_raw64 -o snapshot $(OUTDIR)/snapshot_fromArr.root
 endif
+	@echo "=== W->3pi 2022 FROM RAW ==="
+	./run.exe w3piExample2022  loose $(DATAFILE) -f arrow_raw_raw64
+	./run.exe w3piExample2022Raw loose $(DATAFILE)
+	./run.exe w3piExample2022 loose $(DATAFILE) -f arrow_raw_raw64 -o snapshot $(OUTDIR)/snapshot_fromArrRaw.root
+	./run.exe w3piExample2022Raw loose $(DATAFILE) -o snapshot $(OUTDIR)/snapshot_fromRaw.root

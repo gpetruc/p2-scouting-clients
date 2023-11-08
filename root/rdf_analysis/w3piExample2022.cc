@@ -14,6 +14,7 @@
 #include <ROOT/RSnapshotOptions.hxx>
 #ifdef USE_ARROW
   #include "RArrowDS2.hxx"
+  #include "puppiRawArrowSource.h"
 #endif
 #include <chrono>
 
@@ -57,6 +58,24 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
     int highcut = 0;
     for (int i = 0, n = pts.size(); i < n; ++i) {
       if (std::abs(pdgids[i]) == 11 or std::abs(pdgids[i]) == 211) {
+        if (pts[i] >= minpt1) {
+          lowcut++;
+          if (pts[i] >= minpt2) {
+            intermediatecut++;
+            if (pts[i] >= minpt3)
+              highcut++;
+          }
+        }
+      }
+    }
+    return (lowcut > 2 and intermediatecut > 1 and highcut > 0);
+  };
+  auto initptcutPID = [minpt1, minpt2, minpt3](const ROOT::RVec<float> &pts, const ROOT::RVec<uint8_t> &pids) -> bool {
+    int lowcut = 0;
+    int intermediatecut = 0;
+    int highcut = 0;
+    for (int i = 0, n = pts.size(); i < n; ++i) {
+      if (pids[i] > 1 && pids[i] < 6) {
         if (pts[i] >= minpt1) {
           lowcut++;
           if (pts[i] >= minpt2) {
@@ -177,15 +196,15 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
                                       "Triplet_Index",
                                       "Triplet_Mass"};
   ROOT::RDF::RNode d = top;
-  bool isInt = (format.length() >= 4 && format.substr(format.length() - 4) == "_int");
-  bool isDot = (format.find("rntuple_coll") != std::string::npos || format.find("arrow") != std::string::npos);
   bool isArrow = format.find("arrow") == 0;
-  const std::string sep = isDot ? "." : "_";
+  bool isRaw64 = format.find("raw64") != std::string::npos;
+  bool isInt = (format.length() >= 4 && format.substr(format.length() - 4) == "_int");
+  bool isDot = (format.find("rntuple_coll") != std::string::npos || isArrow) && !isRaw64;
   auto defineNPuppi = [isArrow](ROOT::RDF::RNode &d) {
     return isArrow ? d.Define("nPuppi", [](uint32_t n) { return uint16_t(n); }, {"#Puppi"})
                    : d.Alias("nPuppi", "#Puppi");
   };
-  if (format.find("raw64") != std::string::npos) {
+  if (isRaw64) {
     d = (format.find("tree") == 0 ? d : defineNPuppi(d))
             .Define("Puppi_pt", unpackPtFromRaw, {"Puppi"})
             .Define("Puppi_eta", unpackEtaFromRaw, {"Puppi"})
@@ -239,7 +258,8 @@ void w3piExample2022::analyze(ROOT::RDataFrame &top,
   }
 
   auto c0 = d.Count();
-  auto d1 = d.Filter(initptcut, {"Puppi_pt", "Puppi_pdgId"});
+  auto d1 = isInt || isRaw64 ? ROOT::RDF::RNode(d.Filter(initptcutPID, {"Puppi_pt", isDot ? "Puppi.pid" : "Puppi_pid"}))
+                             : ROOT::RDF::RNode(d.Filter(initptcut, {"Puppi_pt", "Puppi_pdgId"}));
   auto c1 = d1.Count();
   auto d2 = d1.Define("Triplet_Index", maketriplets, {"Puppi_pdgId", "Puppi_pt", "Puppi_eta", "Puppi_phi"})
                 .Filter(notempty, {"Triplet_Index"})
@@ -305,6 +325,13 @@ rdfAnalysis::Report w3piExample2022::run(const std::string &format,
   } else if (format.find("arrow_stream") == 0) {
     assert(infiles.size() == 1);
     ROOT::RDataFrame d = ROOT::RDF::FromArrowIPCStream(infiles.front(), {});
+    //d.Describe().Print();
+    analyze(d, format, ntot, npre, npass, outformat, outfile);
+  } else if (format.find("arrow_raw") == 0) {
+    std::string flavour = format.substr(10);
+    std::unique_ptr<ROOT::RDF::RArrowDS2::RecordBatchSource> src =
+        std::make_unique<PuppiRawArrowSource>(flavour, infiles);
+    ROOT::RDataFrame d(std::make_unique<ROOT::RDF::RArrowDS2>(std::move(src), std::vector<std::string>()));
     //d.Describe().Print();
     analyze(d, format, ntot, npre, npass, outformat, outfile);
 #endif

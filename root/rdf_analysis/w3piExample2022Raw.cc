@@ -1,11 +1,5 @@
 /**
- * Example W -> 3 pi+/- analysis code
- * 
- * Originally developed by Catherine Miller, Boston University, 2022
- * https://github.com/catherine-miller/w3pianalysis/tree/master
- * 
- * Modifications by Giovanni Petrucciani to run on different
- * input files formats, and slight optimization of the code.
+ * Modified version of w3piExample2022 to run on raw data on the fly.
  */
 
 #include "w3piExample2022Raw.h"
@@ -172,7 +166,6 @@ rdfAnalysis::Report w3piExample2022Raw::run(const std::string & /*format*/,
     filler.tfile = TFile::Open(outfile.c_str(), "RECREATE", "", 0);
     if (!filler.tfile)
       throw std::runtime_error("Error opening " + outfile + " for output");
-    std::cout << "Running with " << infiles[0] << " -> " << outfile << std::endl;
     filler.tree = new TTree("Events", "Events", 99, filler.tfile);
     filler.tree->Branch("run", &run, "run/s");
     filler.tree->Branch("orbit", &orbit, "orbit/i");
