@@ -92,7 +92,8 @@ UnpackerBase::Report UnpackerBase::unpackFiles(const std::vector<std::string> &i
       }
       //printf("Will read orbit %u (%u/%u)\n", cmsswOrbit, iorbit, cmsswNOrbits);
       // then loop to read events
-      for (unsigned int ifile = 0; fins[ifile].good() && sizes[ifile] > 0; ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
+      for (unsigned int ifile = 0; fins[ifile].good() && sizes[ifile] > 0;
+           ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
         std::fstream &fin = fins[ifile];
         header = 0;
         do {

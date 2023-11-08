@@ -69,10 +69,13 @@ apache/libapacheUnpacker.so:
 apache/apacheUnpacker.exe:
 	cd apache && $(MAKE) apacheUnpacker.exe
 
+unpack.o: unpack.cc unpack.h UnpackerBase.h
+	$(CC) -fPIC $(CCFLAGS) -fopt-info-vec-all -c $< -o $@
+
 UnpackerBase.o: UnpackerBase.cc unpack.h UnpackerBase.h
 	$(CC) -fPIC $(CCFLAGS) -c $< -o $@
 
-libunpackerBase.so: UnpackerBase.o
+libunpackerBase.so: UnpackerBase.o unpack.o
 	$(CC) $(CCFLAGS) $^ -shared $(LIBS) -o $@
 
 %.exe : %.cc
@@ -82,7 +85,7 @@ receive256tbb.exe : receive256tbb.cc
 	$(CC) $(CCFLAGS) $< $(LIBS) -o $@ -I$(TBB)/include -L$(TBB)/lib -ltbb
  
 format:
-	clang-format -i data_checker.cc data_generator.cc unpack.h UnpackerBase.h
+	clang-format -i data_checker.cc data_generator.cc unpack.h unpack.cc UnpackerBase.h UnpackerBase.cc
 	@cd apache && $(MAKE) format
 	@cd root && $(MAKE) format
 

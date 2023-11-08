@@ -24,17 +24,8 @@ void TTreeUnpackerFloats::fillEvent(
   bx_ = bx;
   good_ = good;
   npuppi_ = nwords;
-  for (uint16_t i = 0; i < nwords; ++i) {
-    readshared(words[i], data_.pt[i], data_.eta[i], data_.phi[i]);
-    if (readpid(words[i], data_.pdgid[i])) {
-      readcharged(words[i], data_.z0[i], data_.dxy[i], data_.quality[i]);
-      data_.wpuppi[i] = 1;
-    } else {
-      readneutral(words[i], data_.wpuppi[i], data_.quality[i]);
-      data_.z0[i] = 0;
-      data_.dxy[i] = 0;
-    }
-  }
+  unpack_puppi_floats(
+      nwords, words, data_.pt, data_.eta, data_.phi, data_.pdgid, data_.quality, data_.z0, data_.dxy, data_.wpuppi);
   if (tree_)
     tree_->Fill();
 }

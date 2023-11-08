@@ -1,6 +1,7 @@
 #ifndef p2_clients_TTreeUnpackerFloats_h
 #define p2_clients_TTreeUnpackerFloats_h
 #include "TTreeUnpackerBase.h"
+#include <stdlib.h>
 
 class TTreeUnpackerFloats : public TTreeUnpackerBase {
 public:
