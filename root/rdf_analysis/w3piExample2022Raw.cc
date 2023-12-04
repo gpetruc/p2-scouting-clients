@@ -130,7 +130,7 @@ bool w3piExample2022Raw::analyzeRawEvent(
     w3piExample2022::vunpackQualityFromRaw(payload, ids, size, data.quality);
     w3piExample2022::vunpackPID(ids, size, data.pdgid);
     filler.tree->Fill();
-  }
+  } 
   return true;
 }
 
@@ -182,7 +182,11 @@ rdfAnalysis::Report w3piExample2022Raw::run(const std::string & /*format*/,
     filler.tree->Branch("Puppi_quality", &data.quality, "Puppi_quality[nPuppi]/b");
     filler.tree->Branch("Triplet_Index", filler.indices, "Triplet_Index[3]/i");
     filler.tree->Branch("Triplet_Mass", &filler.mass, "Triplet_Mass/F");
+  } else if (outformat == "rawsnapshot") {
+    filler.rawfile.open(outfile,  std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
+    assert(sizeof(unsigned int) == sizeof(uint32_t));
   }
+  
   // loop
   for (int ifile = 0, nfiles = fins.size(); fins[ifile].good(); ifile = (ifile == nfiles - 1 ? 0 : ifile + 1)) {
     std::fstream &fin = fins[ifile];
@@ -196,6 +200,12 @@ rdfAnalysis::Report w3piExample2022Raw::run(const std::string & /*format*/,
     if (nwords)
       fin.read(reinterpret_cast<char *>(payload), nwords * sizeof(uint64_t));
     if (analyzeRawEvent(nwords, payload, data, npre, filler)) {
+      if (filler.rawfile.is_open()) {
+        filler.rawfile.write(reinterpret_cast<const char *>(&header), sizeof(uint64_t));
+        filler.rawfile.write(reinterpret_cast<const char *>(payload), nwords * sizeof(uint64_t));
+        filler.rawfile.write(reinterpret_cast<const char *>(filler.indices), 3 * sizeof(unsigned int));
+        filler.rawfile.write(reinterpret_cast<const char *>(&filler.mass), sizeof(float));
+      }
       masshist->Fill(filler.mass);
       npass++;
     }
@@ -207,6 +217,8 @@ rdfAnalysis::Report w3piExample2022Raw::run(const std::string & /*format*/,
   } else if (outformat == "snapshot") {
     filler.tree->Write();
     filler.tfile->Close();
+  } else if (outformat == "rawsnapshot") {
+    filler.rawfile.close();
   }
   double dt = (std::chrono::duration<double>(std::chrono::steady_clock::now() - tstart)).count();
   auto ret = makeReport(dt, ntot, infiles, outfile);

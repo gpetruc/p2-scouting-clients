@@ -113,7 +113,8 @@ ifdef ARROW_INCLUDE
 	./run.exe w3piExample2022 loose testInput_raw64.arrow -f arrow_stream_raw64   -o snapshot snapshot_arrow_raw64.root
 	./run.exe w3piExample2022 loose ../data/Puppi.dump -f arrow_raw_raw64   -o snapshot snapshot_arrow_raw_raw64.root
 endif
-	./run.exe w3piExample2022Raw loose ../data/Puppi.dump  -o snapshot snapshot_raw.root
+	./run.exe w3piExample2022Raw loose ../data/Puppi.dump  -o snapshot snapshot_fromraw.root
+	./run.exe w3piExample2022Raw loose ../data/Puppi.dump  -o rawsnapshot rawsnapshot_fromraw.root
 
 DATAFILE ?= ../data/Puppi.dump
 TREEFILE = $(OUTDIR)/ttree.root
@@ -186,3 +187,4 @@ endif
 	./run.exe w3piExample2022Raw loose $(DATAFILE)
 	./run.exe w3piExample2022 loose $(DATAFILE) -f arrow_raw_raw64 -o snapshot $(OUTDIR)/snapshot_fromArrRaw.root
 	./run.exe w3piExample2022Raw loose $(DATAFILE) -o snapshot $(OUTDIR)/snapshot_fromRaw.root
+	./run.exe w3piExample2022Raw loose $(DATAFILE) -o rawsnapshot $(OUTDIR)/snapshot_fromRaw.raw
