@@ -30,17 +30,16 @@ void RNTupleUnpackerFloats::fillEvent(
   data_.p_dxy->resize(nwords);
   data_.p_wpuppi->resize(nwords);
   data_.p_quality->resize(nwords);
-  for (uint16_t i = 0; i < nwords; ++i) {
-    readshared(words[i], (*data_.p_pt)[i], (*data_.p_eta)[i], (*data_.p_phi)[i]);
-    if (readpid(words[i], (*data_.p_pdgid)[i])) {
-      readcharged(words[i], (*data_.p_z0)[i], (*data_.p_dxy)[i], (*data_.p_quality)[i]);
-      (*data_.p_wpuppi)[i] = 0;
-    } else {
-      readneutral(words[i], (*data_.p_wpuppi)[i], (*data_.p_quality)[i]);
-      (*data_.p_z0)[i] = 0;
-      (*data_.p_dxy)[i] = 0;
-    }
-  }
+  unpack_puppi_floats(nwords,
+                      words,
+                      data_.p_pt->data(),
+                      data_.p_eta->data(),
+                      data_.p_phi->data(),
+                      data_.p_pdgid->data(),
+                      data_.p_quality->data(),
+                      data_.p_z0->data(),
+                      data_.p_dxy->data(),
+                      data_.p_wpuppi->data());
   if (writer_)
     writer_->Fill();
 }

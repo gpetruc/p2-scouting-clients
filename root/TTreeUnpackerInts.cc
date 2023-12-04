@@ -23,18 +23,8 @@ void TTreeUnpackerInts::fillEvent(
   bx_ = bx;
   good_ = good;
   npuppi_ = nwords;
-  for (uint16_t i = 0; i < nwords; ++i) {
-    readshared(words[i], data_.pt[i], data_.eta[i], data_.phi[i]);
-    data_.pid[i] = (words[i] >> 37) & 0x7;
-    if (data_.pid[i] > 1) {
-      readcharged(words[i], data_.z0[i], data_.dxy[i], data_.quality[i]);
-      data_.wpuppi[i] = 0;
-    } else {
-      readneutral(words[i], data_.wpuppi[i], data_.quality[i]);
-      data_.z0[i] = 0;
-      data_.dxy[i] = 0;
-    }
-  }
+  unpack_puppi_ints(
+      nwords, words, data_.pt, data_.eta, data_.phi, data_.pid, data_.quality, data_.z0, data_.dxy, data_.wpuppi);
   if (tree_)
     tree_->Fill();
 }

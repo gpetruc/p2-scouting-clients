@@ -47,14 +47,14 @@ ALLOBJ := ApacheUnpackMaker.o $(ARROW_UNPACKER_OBJ)
 ApacheUnpackMaker.o : ApacheUnpackMaker.cc ApacheUnpackMaker.h  $(ARROW_UNPACKER_INC)  $(BASE_INC)
 	$(CC) -fPIC $(CCFLAGS) -c $< -o $@
 
-libapacheUnpacker.so: $(ALLOBJ) -lunpackerBase
-	$(CC) -shared $(CCFLAGS) $(LIBS) $(ALLOBJ) -L.. -lunpackerBase -o $@
+libapacheUnpacker.so: $(ALLOBJ) libunpackerBase.so
+	$(CC) $(CCFLAGS) $(ALLOBJ) -shared $(LIBS) -L.. -lunpackerBase -o $@
 
-apacheUnpacker.exe: ApacheUnpackMain.cc -lunpackerBase libapacheUnpacker.so
-	$(CC) $(CCFLAGS) $(LIBS) $< -L.. -L. -lunpackerBase -lapacheUnpacker -o $@
+apacheUnpacker.exe: ApacheUnpackMain.cc libunpackerBase.so libapacheUnpacker.so
+	$(CC) $(CCFLAGS) $< $(LIBS) -L.. -L. -lunpackerBase -lapacheUnpacker -o $@
 
 arrow_read.exe : arrow_read.cc
-	$(CC) $(CCFLAGS) $(LIBS) $< -o $@
+	$(CC) $(CCFLAGS) $< $(LIBS) -o $@
 
 format:
 	@clang-format -i *.h *.cc
@@ -72,7 +72,7 @@ run_tests: apacheUnpacker.exe arrow_read.exe
 	./apacheUnpacker.exe tkmu ipcstream float16 ../root/data/TkMuons_TM18.dump tkmu.ipc.float16.arrow; 
 	@for T in float float16 int raw64 ; do  \
 		./arrow_read.exe ipcstream  puppi.ipc.$${T}.arrow; echo; \
-		[[ "$$T" == "float" ]] && ./arrow_read.exe ipcfile  puppi.ipcfile.$${T}.arrow; echo; \
+		[ "$$T" = "float" ] && ./arrow_read.exe ipcfile  puppi.ipcfile.$${T}.arrow; echo; \
 		break; \
 	done
 
@@ -96,6 +96,12 @@ run_test_speed: apacheUnpacker.exe
 	@./apacheUnpacker.exe puppi ipcstream int $(DATAFILE) $(OUTDIR)/out.arrow
 	@./apacheUnpacker.exe puppi ipcstream raw64 $(DATAFILE) $(OUTDIR)/out.arrow
 	@./apacheUnpacker.exe tkmu ipcstream float $(TKMUDATAFILE) $(OUTDIR)/out.arrow
+	@echo "==== With output ===="
+	@./apacheUnpacker.exe puppi ipcstream float $(DATAFILE) $(OUTDIR)/out.arrow --useBaseReadFile
+	@./apacheUnpacker.exe puppi ipcstream float16 $(DATAFILE) $(OUTDIR)/out.arrow --useBaseReadFile
+	@./apacheUnpacker.exe puppi ipcstream int $(DATAFILE) $(OUTDIR)/out.arrow --useBaseReadFile
+	@./apacheUnpacker.exe puppi ipcstream raw64 $(DATAFILE) $(OUTDIR)/out.arrow --useBaseReadFile
+	@./apacheUnpacker.exe tkmu ipcstream float $(TKMUDATAFILE) $(OUTDIR)/out.arrow --useBaseReadFile
 
 run_test_comp: apacheUnpacker.exe
 	@echo "==== With compressed output ===="

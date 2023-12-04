@@ -14,6 +14,7 @@
 #include <ROOT/RSnapshotOptions.hxx>
 #ifdef USE_ARROW
   #include "RArrowDS2.hxx"
+  #include "puppiRawArrowSource.h"
 #endif
 #include <chrono>
 
@@ -41,7 +42,7 @@ w3piExample2022::w3piExample2022(const std::string &cutChoice, bool verbose) : v
   }
 }
 
-void w3piExample2022::analyze(ROOT::RDataFrame &d,
+void w3piExample2022::analyze(ROOT::RDataFrame &top,
                               const std::string &format,
                               unsigned long int &ntot,
                               unsigned long int &npre,
@@ -69,6 +70,24 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
     }
     return (lowcut > 2 and intermediatecut > 1 and highcut > 0);
   };
+  auto initptcutPID = [minpt1, minpt2, minpt3](const ROOT::RVec<float> &pts, const ROOT::RVec<uint8_t> &pids) -> bool {
+    int lowcut = 0;
+    int intermediatecut = 0;
+    int highcut = 0;
+    for (int i = 0, n = pts.size(); i < n; ++i) {
+      if (pids[i] > 1 && pids[i] < 6) {
+        if (pts[i] >= minpt1) {
+          lowcut++;
+          if (pts[i] >= minpt2) {
+            intermediatecut++;
+            if (pts[i] >= minpt3)
+              highcut++;
+          }
+        }
+      }
+    }
+    return (lowcut > 2 and intermediatecut > 1 and highcut > 0);
+  };
 
   //SELECTION
   //generates list of pion triplets passing all tests
@@ -76,13 +95,14 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
                           const ROOT::RVec<float> &pts,
                           const ROOT::RVec<float> &etas,
                           const ROOT::RVec<float> &phis) {
-    ROOT::RVec<ROOT::RVec<unsigned int>> triplets;  //stores all passing triplets (best one selected at the end)
-    ROOT::RVec<unsigned int> ix;                    //pion indeces
-    ROOT::RVec<int> icharge;                        //pion charges
-    ROOT::RVec<float> ptsums;
+    ROOT::RVec<unsigned int> ix;  //pion indeces
+    ROOT::RVec<int> icharge;      //pion charges
     ROOT::RVec<unsigned int> iso(
         pdgids.size(),
         0);  //stores whether a particle passes isolation test so we don't calculate reliso twice
+
+    ROOT::RVec<unsigned int> bestTriplet;  //triplet of indeces
+    float bestPtSum = -1;
 
     for (unsigned int i = 0, n = pdgids.size(); i < n; ++i) {  //make list of all hadrons
       if ((std::abs(pdgids[i]) == 211 or std::abs(pdgids[i]) == 11) and pts[i] >= cuts.minpt1) {
@@ -143,9 +163,11 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
                     }
                   }
                   if (isop == true) {
-                    triplets.push_back(tr);
                     ptsum = pts[tr[0]] + pts[tr[1]] + pts[tr[2]];
-                    ptsums.push_back(ptsum);
+                    if (ptsum > bestPtSum) {
+                      bestPtSum = ptsum;
+                      bestTriplet = tr;
+                    }
                   }  // iso
                 }    // delta R
               }      // mass
@@ -155,25 +177,9 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
       }              //high pt cut
     }                //if 3 or more pions
 
-    if (triplets.empty())
-      triplets.emplace_back();
-    if (triplets.size() == 1)
-      return triplets[0];
-
-    //if there are multiple triplets passing, choose the best
-    float bestscore = 0;
-    unsigned int best = 0;  //index of best triplet in triplet array
-    for (unsigned int i = 0, n = triplets.size(); i < n; ++i) {
-      float score = ptsums[i];
-      if (score > bestscore) {
-        bestscore = score;
-        best = i;
-      }
-    }
-    return triplets[best];
+    return bestTriplet;
   };
 
-  std::string c_pt, c_eta, c_phi, c_pdgId, c_dxy, c_z0, c_wpuppi;
   std::vector<std::string> outputs = {"run",
                                       "orbit",
                                       "bx",
@@ -189,139 +195,97 @@ void w3piExample2022::analyze(ROOT::RDataFrame &d,
                                       "Puppi_quality",
                                       "Triplet_Index",
                                       "Triplet_Mass"};
-  bool isMC = false;
+  ROOT::RDF::RNode d = top;
+  bool isArrow = format.find("arrow") == 0;
+  bool isRaw64 = format.find("raw64") != std::string::npos;
   bool isInt = (format.length() >= 4 && format.substr(format.length() - 4) == "_int");
-  if (format == "tree" || format == "tree_int" || format == "rntuple_vec" || format == "rntuple_vec_int") {
-    c_pt = "Puppi_pt";
-    c_eta = "Puppi_eta";
-    c_phi = "Puppi_phi";
-    c_pdgId = "Puppi_pdgId";
-    c_dxy = "Puppi_dxy";
-    c_z0 = "Puppi_z0";
-    c_wpuppi = "Puppi_wpuppi";
+  bool isDot = (format.find("rntuple_coll") != std::string::npos || isArrow) && !isRaw64;
+  auto defineNPuppi = [isArrow](ROOT::RDF::RNode &d) {
+    return isArrow ? d.Define("nPuppi", [](uint32_t n) { return uint16_t(n); }, {"#Puppi"})
+                   : d.Alias("nPuppi", "#Puppi");
+  };
+  if (isRaw64) {
+    d = (format.find("tree") == 0 ? d : defineNPuppi(d))
+            .Define("Puppi_pt", unpackPtFromRaw, {"Puppi"})
+            .Define("Puppi_eta", unpackEtaFromRaw, {"Puppi"})
+            .Define("Puppi_phi", unpackPhiFromRaw, {"Puppi"})
+            .Define("Puppi_pid", unpackIDFromRaw, {"Puppi"})
+            .Define("Puppi_pdgId", unpackPID, {"Puppi_pid"})
+            .Define("Puppi_dxy", unpackDxyFromRaw, {"Puppi", "Puppi_pid"})
+            .Define("Puppi_z0", unpackZ0FromRaw, {"Puppi", "Puppi_pid"})
+            .Define("Puppi_wpuppi", unpackWPuppiFromRaw, {"Puppi", "Puppi_pid"})
+            .Define("Puppi_quality", unpackQualityFromRaw, {"Puppi", "Puppi_pid"});
+  } else if (isInt) {
+    // need to copy-paste stuff as Aliases, Define & Redefine don't play well enough together yet
+    if (!isDot) {
+      d = d.Redefine("Puppi_pt", unpackPt, {"Puppi_pt"})
+              .Redefine("Puppi_eta", unpackEtaPhi, {"Puppi_eta"})
+              .Redefine("Puppi_phi", unpackEtaPhi, {"Puppi_phi"})
+              .Define("Puppi_pdgId", unpackPID, {"Puppi_pid"})
+              .Redefine("Puppi_dxy", unpackDxy, {"Puppi_dxy"})
+              .Redefine("Puppi_z0", unpackZ0, {"Puppi_z0"})
+              .Redefine("Puppi_wpuppi", unpackWPuppi, {"Puppi_wpuppi"});
+    } else {
+      d = defineNPuppi(d)
+              .Define("Puppi_pt", unpackPt, {"Puppi.pt"})
+              .Define("Puppi_eta", unpackEtaPhi, {"Puppi.eta"})
+              .Define("Puppi_phi", unpackEtaPhi, {"Puppi.phi"})
+              .Define("Puppi_pdgId", unpackPID, {"Puppi.pid"})
+              .Define("Puppi_dxy", unpackDxy, {"Puppi.dxy"})
+              .Define("Puppi_z0", unpackZ0, {"Puppi.z0"})
+              .Define("Puppi_wpuppi", unpackWPuppi, {"Puppi.wpuppi"})
+              .Alias("Puppi_quality", "Puppi.quality");
+    }
   } else if (format == "mc") {
-    isMC = true;
-    c_pt = "Puppi_pt";
-    c_eta = "L1Puppi_eta";
-    c_phi = "L1Puppi_phi";
-    c_pdgId = "Puppi_pdgId";  // this we redefine
-    c_dxy = "L1Puppi_dxy";
-    c_z0 = "L1Puppi_z0";
-    c_wpuppi = "L1Puppi_wpuppi";
-  } else if (format == "rntuple_coll" || format.find("arrow") == 0) {
-    c_pt = "Puppi.pt";
-    c_eta = "Puppi.eta";
-    c_phi = "Puppi.phi";
-    c_pdgId = "Puppi.pdgId";
-    c_dxy = "Puppi.dxy";
-    c_z0 = "Puppi.z0";
-    c_wpuppi = "Puppi.wpuppi";
-    outputs = {"run",
-               "orbit",
-               "bx",
-               "good",
-               "nPuppi",
-               "Puppi.pt",
-               "Puppi.eta",
-               "Puppi.phi",
-               "Puppi.pdgId",
-               "Puppi.z0",
-               "Puppi.dxy",
-               "Puppi.wpuppi",
-               "Puppi.quality",
-               "Triplet_Index",
-               "Triplet_Mass"};
+    d = d.Alias("Puppi_pt", "L1Puppi_pt")
+            .Alias("Puppi_eta", "L1Puppi_eta")
+            .Alias("Puppi_phi", "L1Puppi_phi")
+            .Alias("Puppi_dxy", "L1Puppi_dxy")
+            .Alias("Puppi_z0", "L1Puppi_z0")
+            .Define("Puppi_pdgId", convertIds, {"L1Puppi_pdgId"})
+            .Alias("Puppi_wpuppi", "L1Puppi_wpuppi")
+            .Alias("Puppi_quality", "L1Puppi_quality");
+  } else if (isDot) {
+    d = defineNPuppi(d)
+            .Alias("Puppi_pt", "Puppi.pt")
+            .Alias("Puppi_eta", "Puppi.eta")
+            .Alias("Puppi_phi", "Puppi.phi")
+            .Alias("Puppi_dxy", "Puppi.dxy")
+            .Alias("Puppi_z0", "Puppi.z0")
+            .Alias("Puppi_pdgId", "Puppi.pdgId")
+            .Alias("Puppi_wpuppi", "Puppi.wpuppi")
+            .Alias("Puppi_quality", "Puppi.quality");
   }
+
   auto c0 = d.Count();
-  auto d1 = isMC ? d.Define("Puppi_pdgId", convertIds, {"L1Puppi_pdgId"}).Filter(initptcut, {c_pt, c_pdgId})
-                 : (isInt ? d.Redefine("Puppi_pt", unpackPt, {c_pt})
-                                .Redefine("Puppi_eta", unpackEtaPhi, {"Puppi_eta"})
-                                .Redefine("Puppi_phi", unpackEtaPhi, {"Puppi_phi"})
-                                .Define("Puppi_pdgId", unpackPID, {"Puppi_pid"})
-                                .Redefine("Puppi_dxy", unpackDxy, {"Puppi_dxy"})
-                                .Redefine("Puppi_z0", unpackZ0, {"Puppi_z0"})
-                                .Redefine("Puppi_wpuppi", unpackWPuppi, {"Puppi_wpuppi"})
-                                .Filter(initptcut, {c_pt, c_pdgId})
-                          : d.Filter(initptcut, {c_pt, c_pdgId}));
+  auto d1 = isInt || isRaw64 ? ROOT::RDF::RNode(d.Filter(initptcutPID, {"Puppi_pt", isDot ? "Puppi.pid" : "Puppi_pid"}))
+                             : ROOT::RDF::RNode(d.Filter(initptcut, {"Puppi_pt", "Puppi_pdgId"}));
   auto c1 = d1.Count();
-  auto d2 = d1.Define("Triplet_Index", maketriplets, {c_pdgId, c_pt, c_eta, c_phi})
+  auto d2 = d1.Define("Triplet_Index", maketriplets, {"Puppi_pdgId", "Puppi_pt", "Puppi_eta", "Puppi_phi"})
                 .Filter(notempty, {"Triplet_Index"})
-                .Define("Triplet_Mass", tripletmass, {"Triplet_Index", c_pt, c_eta, c_phi});
+                .Define("Triplet_Mass", tripletmass, {"Triplet_Index", "Puppi_pt", "Puppi_eta", "Puppi_phi"});
   auto masshist =
       d2.Histo1D<float>({"masshist", "W Boson mass from selected pions; mass (GeV/c^2)", 100, 0, 100}, "Triplet_Mass");
 
   if (outFormat == "snapshot") {
     ROOT::RDF::RSnapshotOptions opts;
     opts.fCompressionLevel = 0;
-    if (format == "rntuple_coll") {
-      auto d3 = d2.Alias("nPuppi", "#Puppi");
-      d3.Snapshot<uint16_t,              // run
-                  uint32_t,              // orbit
-                  uint16_t,              // bx
-                  bool,                  // good
-                  uint16_t,              // nPuppi
-                  ROOT::RVec<float>,     // Puppi_pt (RNTuple reads them as RVec)
-                  ROOT::RVec<float>,     // Puppi_eta
-                  ROOT::RVec<float>,     // Puppi_phi
-                  ROOT::RVec<int16_t>,   // Puppi_pdgId
-                  ROOT::RVec<float>,     // Puppi_z0
-                  ROOT::RVec<float>,     // Puppi_dxy
-                  ROOT::RVec<float>,     // Puppi_wpuppi
-                  ROOT::RVec<uint8_t>,   // Puppi_quality
-                  ROOT::RVec<unsigned>,  // Triplet_Index
-                  float                  // Triplet_mass
-                  >("Events", outFile.c_str(), outputs, opts);
-    } else if (format.find("arrow") == 0) {
-      auto d3 = d2.Alias("nPuppi", "#Puppi");
-      outputs = {"run",
-                 "orbit",
-                 "bx",
-                 "good",
-                 "nPuppi",
-                 "Puppi.pt",
-                 "Puppi.eta",
-                 "Puppi.phi",
-                 "Puppi.pdgId",
-                 "Puppi.z0",
-                 "Puppi.dxy",
-                 "Puppi.wpuppi",
-                 "Puppi.quality",
-                 "Triplet_Index",
-                 "Triplet_Mass"};
-      d3.Snapshot<uint16_t,              // run
-                  uint32_t,              // orbit
-                  uint16_t,              // bx
-                  bool,                  // good
-                  uint16_t,              // nPuppi
-                  ROOT::RVec<float>,     // Puppi_pt (RNTuple reads them as RVec)
-                  ROOT::RVec<float>,     // Puppi_eta
-                  ROOT::RVec<float>,     // Puppi_phi
-                  ROOT::RVec<int16_t>,   // Puppi_pdgId
-                  ROOT::RVec<float>,     // Puppi_z0
-                  ROOT::RVec<float>,     // Puppi_dxy
-                  ROOT::RVec<float>,     // Puppi_wpuppi
-                  ROOT::RVec<uint8_t>,   // Puppi_quality
-                  ROOT::RVec<unsigned>,  // Triplet_Index
-                  float                  // Triplet_mass
-                  >("Events", outFile.c_str(), outputs, opts);
-    } else {
-      d2.Snapshot<uint16_t,              // run
-                  uint32_t,              // orbit
-                  uint16_t,              // bx
-                  bool,                  // good
-                  uint16_t,              // nPuppi
-                  ROOT::RVec<float>,     // Puppi_pt   (actually a float[], but RDF Snapshot doesn't like it;
-                  ROOT::RVec<float>,     // Puppi_eta   JIT-ed Snapshot would get the arrays correctly, though)
-                  ROOT::RVec<float>,     // Puppi_phi
-                  ROOT::RVec<int16_t>,   // Puppi_pdgId
-                  ROOT::RVec<float>,     // Puppi_z0
-                  ROOT::RVec<float>,     // Puppi_dxy
-                  ROOT::RVec<float>,     // Puppi_wpuppi
-                  ROOT::RVec<uint8_t>,   // Puppi_quality
-                  ROOT::RVec<unsigned>,  // Triplet_Index
-                  float                  // Triplet_mass
-                  >("Events", outFile.c_str(), outputs, opts);
-    }
+    d2.Snapshot<uint16_t,              // run
+                uint32_t,              // orbit
+                uint16_t,              // bx
+                bool,                  // good
+                uint16_t,              // nPuppi
+                ROOT::RVec<float>,     // Puppi_pt
+                ROOT::RVec<float>,     // Puppi_eta
+                ROOT::RVec<float>,     // Puppi_phi
+                ROOT::RVec<int16_t>,   // Puppi_pdgId
+                ROOT::RVec<float>,     // Puppi_z0
+                ROOT::RVec<float>,     // Puppi_dxy
+                ROOT::RVec<float>,     // Puppi_wpuppi
+                ROOT::RVec<uint8_t>,   // Puppi_quality
+                ROOT::RVec<unsigned>,  // Triplet_Index
+                float                  // Triplet_mass
+                >("Events", outFile.c_str(), outputs, opts);
   }
   ntot = *c0;
   npre = *c1;
@@ -361,6 +325,13 @@ rdfAnalysis::Report w3piExample2022::run(const std::string &format,
   } else if (format.find("arrow_stream") == 0) {
     assert(infiles.size() == 1);
     ROOT::RDataFrame d = ROOT::RDF::FromArrowIPCStream(infiles.front(), {});
+    //d.Describe().Print();
+    analyze(d, format, ntot, npre, npass, outformat, outfile);
+  } else if (format.find("arrow_raw") == 0) {
+    std::string flavour = format.substr(10);
+    std::unique_ptr<ROOT::RDF::RArrowDS2::RecordBatchSource> src =
+        std::make_unique<PuppiRawArrowSource>(flavour, infiles);
+    ROOT::RDataFrame d(std::make_unique<ROOT::RDF::RArrowDS2>(std::move(src), std::vector<std::string>()));
     //d.Describe().Print();
     analyze(d, format, ntot, npre, npass, outformat, outfile);
 #endif

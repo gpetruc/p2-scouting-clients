@@ -100,7 +100,7 @@ unsigned long int ArrowUnpackerBase::closeOutput() {
   return ret;
 }
 
-UnpackerBase::Report ArrowUnpackerBase::unpackFiles(const std::vector<std::string> &ins, const std::string &out) {
+UnpackerBase::Report ArrowUnpackerBase::myUnpackFiles(const std::vector<std::string> &ins, const std::string &out) {
   bookOutput(out);
 
   Report ret(0);

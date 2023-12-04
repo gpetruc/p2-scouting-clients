@@ -1,5 +1,6 @@
 #include "analysis.h"
 #include "w3piExample2022.h"
+#include "w3piExample2022Raw.h"
 
 #include <getopt.h>
 
@@ -74,14 +75,17 @@ int main(int argc, char **argv) {
     ROOT::EnableImplicitMT(threads);
 
   std::unique_ptr<rdfAnalysis> analyzer;
-  if (analysis == "w3piExample2022") {
+  if (analysis == "w3piExample2022" || analysis == "w3piExample2022Raw") {
     if (ins.size() <= 1 || (ins.front() != "tight" && ins.front() != "loose")) {
       printf("w3piExample2022 analysis requires to specify a set of cuts (\"tight\", \"loose\")\n");
       return 1;
     }
     std::string cuts = ins.front();
     ins.erase(ins.begin());
-    analyzer = std::make_unique<w3piExample2022>(cuts, verbose);
+    if (analysis == "w3piExample2022")
+      analyzer = std::make_unique<w3piExample2022>(cuts, verbose);
+    else if (analysis == "w3piExample2022Raw")
+      analyzer = std::make_unique<w3piExample2022Raw>(cuts, verbose);
     printf("Running analysis %s with cuts %s\n", analysis.c_str(), cuts.c_str());
   } else {
     printf("Unknown analysis %s\n", analysis.c_str());

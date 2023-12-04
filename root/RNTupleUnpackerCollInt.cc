@@ -27,7 +27,7 @@ void RNTupleUnpackerCollInt::fillEvent(
     (*data_.p_pid) = (words[i] >> 37) & 0x7;
     if ((*data_.p_pid) > 1) {
       readcharged(words[i], *data_.p_z0, *data_.p_dxy, *data_.p_quality);
-      *data_.p_wpuppi = 0;
+      *data_.p_wpuppi = 256;
     } else {
       readneutral(words[i], *data_.p_wpuppi, *data_.p_quality);
       *data_.p_z0 = 0;

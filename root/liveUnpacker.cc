@@ -35,6 +35,7 @@ void usage() {
   printf("                    algorithms supported are none, lzma, zlib, lz4, zstd;\n");
   printf("                    default level is 4\n");
   printf("  --delete        : delete unpacked output (for benchmarking without filling disks)\n");
+  printf("  --orbitBitsPerLS N : log2(Orbits) per lumisection (default 18, i.e. 256k orbits per 23s lumisection)\n");
 }
 
 struct Token {
@@ -107,8 +108,18 @@ private:
 
 class Source {
 public:
-  Source(const std::string &from, const std::string &to, unsigned int timeslices, int inotify_fd, Totals &totals)
-      : from_(from), to_(to), inotify_fd_(inotify_fd), timeslices_(timeslices), totals_(&totals) {}
+  Source(const std::string &from,
+         const std::string &to,
+         unsigned int timeslices,
+         unsigned int orbitBitsPerLS,
+         int inotify_fd,
+         Totals &totals)
+      : from_(from),
+        to_(to),
+        inotify_fd_(inotify_fd),
+        timeslices_(timeslices),
+        orbitBitsPerLS_(orbitBitsPerLS),
+        totals_(&totals) {}
 
   Token operator()(bool &stop) const {
     Token ret;
@@ -137,26 +148,33 @@ private:
   static const unsigned int BUF_LEN = 1024 * (EVENT_SIZE + 16);
   const std::string from_, to_;
   const int inotify_fd_;
-  unsigned int timeslices_;
+  unsigned int timeslices_, orbitBitsPerLS_;
   mutable Totals *totals_;
 
-  static bool parseUnpackedFilename(const std::string &fname, unsigned int &orbit, unsigned int &ts, std::string &fout) {
-    // in the form raw.ts00.orb00056001.dump  | tsXX.orbXXXXX.dump
+  bool parseUnpackedFilename(const std::string &fname, unsigned int &orbit, unsigned int &ts, std::string &fout) const {
+    // in the form run000037_ls0001_index000513[_ts00].raw
     if (fname.length() < 5)
       return false;
-    std::string work = fname.substr(0, fname.length() - 5);  // remove the ".dump";
-    auto pos = work.rfind('.');
-    if (pos == std::string::npos || pos < 4 || work.substr(pos, 4) != ".orb") {
+    std::string work = fname.substr(0, fname.length() - 4);  // remove the ".raw";
+    auto pos = work.rfind('_');
+    if (pos == std::string::npos || (work.substr(pos, 3) != "_ts")) {
       return false;
     }
-    orbit = std::atol(work.substr(pos + 4).c_str());
-    auto pos2 = work.rfind('.', pos - 1);
-    if (work.substr(pos2 + 1, 2) != "ts") {
+    ts = std::atoi(work.substr(pos + 3).c_str());
+    work = work.substr(0, pos);
+    pos = work.rfind('_');
+    if (pos == std::string::npos || work.substr(pos, 6) != "_index") {
       return false;
     }
-    ts = std::atoi(work.substr(pos2 + 3, pos - pos2 - 3).c_str());
-    fout = work.substr(0, pos2) + work.substr(pos) + ".tmp.root";
-    //printf("parseUnpackedFilename('%s') --> orbit %u, ts %u, fout '%s'\n", work.c_str(), orbit, ts, fout.c_str());
+    unsigned int index = std::atoi(work.substr(pos + 6).c_str());
+    auto pos2 = work.rfind('_', pos - 1);
+    if (pos2 == std::string::npos || work.substr(pos2, 3) != "_ls") {
+      return false;
+    }
+    unsigned int ls = std::atoi(work.substr(pos2 + 3, pos).c_str());
+    orbit = (std::max(ls - 1, 0u) << orbitBitsPerLS_) + index;
+    fout = work + ".tmp.root";
+    // printf("parseUnpF('%s') --> orbit %u, ls %u, ts %u, fout '%s'\n", work.c_str(), orbit, ls, ts, fout.c_str());
     return true;
   }
   struct DemuxQueueItem {
@@ -248,7 +266,7 @@ private:
           if (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO)) {
             if (!(event->mask & IN_ISDIR)) {
               std::string fname = event->name;
-              if (fname.length() > 5 && fname.substr(fname.length() - 5) == ".dump") {
+              if (fname.length() > 4 && fname.substr(fname.length() - 4) == ".raw") {
                 std::string in(from_ + "/" + fname);
                 if (std::filesystem::exists(in)) {
                   if (timeslices_ == 0) {
@@ -288,6 +306,7 @@ int singleCoreLiveUnpacker(const RootUnpackMaker::Spec &unpackerSpec,
                            const std::string &from,
                            const std::string &to,
                            unsigned int timeslices,
+                           unsigned int orbitBitsPerLS,
                            bool deleteAfterwards) {
   auto fdwd = initInotify(from);
   if (fdwd.first < 0) {
@@ -295,7 +314,7 @@ int singleCoreLiveUnpacker(const RootUnpackMaker::Spec &unpackerSpec,
   }
 
   Totals totals;
-  auto src = Source(from, to, timeslices, fdwd.first, totals);
+  auto src = Source(from, to, timeslices, orbitBitsPerLS, fdwd.first, totals);
   auto dest = Executor(unpackerSpec, totals, deleteAfterwards);
   bool stop = false;
   while (!stop) {
@@ -313,6 +332,7 @@ int tbbLiveUnpacker(unsigned int threads,
                     const std::string &from,
                     const std::string &to,
                     unsigned int timeslices,
+                    unsigned int orbitBitsPerLS,
                     bool deleteAfterwards) {
   auto fdwd = initInotify(from);
   if (fdwd.first < 0) {
@@ -322,8 +342,8 @@ int tbbLiveUnpacker(unsigned int threads,
   ROOT::EnableThreadSafety();
 
   Totals totals;
-  auto head =
-      tbb::make_filter<void, Token>(tbb::filter::serial_in_order, Source(from, to, timeslices, fdwd.first, totals));
+  auto head = tbb::make_filter<void, Token>(tbb::filter::serial_in_order,
+                                            Source(from, to, timeslices, orbitBitsPerLS, fdwd.first, totals));
   auto tail = tbb::make_filter<Token, void>((threads == 0 ? tbb::filter::serial_in_order : tbb::filter::parallel),
                                             Executor(unpackerSpec, totals, deleteAfterwards));
   tbb::parallel_pipeline(std::max(1u, threads), head & tail);
@@ -345,12 +365,13 @@ int main(int argc, char **argv) {
 
   std::string compressionMethod = "none";
   int compressionLevel = 0, threads = -1;
-  unsigned int timeslices = 0;
+  unsigned int timeslices = 0, orbitBitsPerLS = 18;
   bool deleteAfterwards = false;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
                                            {"threads", required_argument, nullptr, 'j'},
                                            {"demux", required_argument, nullptr, 'd'},
+                                           {"orbitBitsPerLS", required_argument, nullptr, 1},
                                            {"compression", required_argument, nullptr, 'z'},
                                            {"delete", no_argument, nullptr, 'D'},
                                            {nullptr, 0, nullptr, 0}};
@@ -378,6 +399,10 @@ int main(int argc, char **argv) {
         break;
       case 'd':
         timeslices = std::atoi(optarg);
+        break;
+      case 1:
+        orbitBitsPerLS = std::atoi(optarg);
+        assert(orbitBitsPerLS > 0);
         break;
       case 'D':
         deleteAfterwards = true;
@@ -407,8 +432,8 @@ int main(int argc, char **argv) {
 
   RootUnpackMaker::Spec spec(obj, kind, format, compressionMethod, compressionLevel);
   if (threads == -1) {
-    return singleCoreLiveUnpacker(spec, from, to, timeslices, deleteAfterwards);
+    return singleCoreLiveUnpacker(spec, from, to, timeslices, orbitBitsPerLS, deleteAfterwards);
   } else if (threads >= 0) {
-    return tbbLiveUnpacker(threads, spec, from, to, timeslices, deleteAfterwards);
+    return tbbLiveUnpacker(threads, spec, from, to, timeslices, orbitBitsPerLS, deleteAfterwards);
   }
 }

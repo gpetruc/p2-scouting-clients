@@ -34,17 +34,16 @@ void ArrowUnpackerFloats::unpackAndCommitBatch() {
     v->resize(nallpuppi);
   pdgid_.resize(nallpuppi);
   quality_.resize(nallpuppi);
-  for (unsigned int i = 0; i < nallpuppi; ++i) {
-    readshared(data_[i], pt_[i], eta_[i], phi_[i]);
-    if (readpid(data_[i], pdgid_[i])) {
-      readcharged(data_[i], z0_[i], dxy_[i], quality_[i]);
-      wpuppi_[i] = 0;
-    } else {
-      readneutral(data_[i], wpuppi_[i], quality_[i]);
-      z0_[i] = 0;
-      dxy_[i] = 0;
-    }
-  }
+  unpack_puppi_floats(nallpuppi,
+                      data_.data(),
+                      pt_.data(),
+                      eta_.data(),
+                      phi_.data(),
+                      pdgid_.data(),
+                      quality_.data(),
+                      z0_.data(),
+                      dxy_.data(),
+                      wpuppi_.data());
   // commit
   std::shared_ptr<arrow::Array> run(new arrow::UInt16Array(entriesInBatch_, arrow::Buffer::Wrap(run_)));
   std::shared_ptr<arrow::Array> orbit(new arrow::UInt32Array(entriesInBatch_, arrow::Buffer::Wrap(orbit_)));

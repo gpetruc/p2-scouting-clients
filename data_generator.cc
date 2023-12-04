@@ -95,7 +95,7 @@ public:
   GeneratorBase(const ResamplerData &data, unsigned int tmux, unsigned int offs, unsigned int seed = 37)
       : src_(data, tmux, offs, seed) {}
   virtual ~GeneratorBase() {}
-  virtual void generate(int fd, unsigned int norbits, unsigned int orbitmux) = 0;
+  virtual void generate(int fd, unsigned int norbits, unsigned int firstOrbit, unsigned int orbitmux) = 0;
 
 protected:
   OrbitPayloadResampler src_;
@@ -109,12 +109,13 @@ public:
                     unsigned int seed,
                     unsigned int orbitSize = 2 * 1024 * 1024)
       : GeneratorBase(data, tmux, offs, seed), orbSize_(orbitSize) {}
-  void generate(int fd, unsigned int norbits, unsigned int orbitmux) override final {
+  void generate(int fd, unsigned int norbits, unsigned int firstOrbit, unsigned int orbitmux) override final {
     uint64_t *orbit_buff = reinterpret_cast<uint64_t *>(std::aligned_alloc(4096u, orbSize_));
     uint64_t *end_buff = orbit_buff + (orbSize_ / sizeof(uint64_t));
-    for (unsigned int i = 1; i <= norbits; i += orbitmux) {
+    for (unsigned int i = firstOrbit, lastOrbit = firstOrbit + norbits; i < lastOrbit; i += orbitmux) {
       unsigned int nwords = src_.fillOrbit(i, orbit_buff, end_buff);
-      write(fd, orbit_buff, nwords * sizeof(uint64_t));
+      unsigned int written = write(fd, orbit_buff, nwords * sizeof(uint64_t));
+      assert(written == nwords * sizeof(uint64_t));
     }
     std::free(orbit_buff);
   }
@@ -132,7 +133,7 @@ public:
                   bool sync,
                   unsigned int orbitSize = 2 * 1024 * 1024)
       : GeneratorBase(data, tmux, offs, seed), orbSize_(orbitSize), sync_(sync) {}
-  void generate(int fd, unsigned int norbits, unsigned int orbitmux) override final {
+  void generate(int fd, unsigned int norbits, unsigned int firstOrbit, unsigned int orbitmux) override final {
     constexpr unsigned int packetSize = 256 * 256 / 8;  // max DTH256 packet size is 256 rows of 256 bits
     unsigned int maxPackets = std::ceil(float(orbSize_) / packetSize);
     std::vector<struct iovec> iovecs(2 * maxPackets);
@@ -151,7 +152,7 @@ public:
 
     double orbitTime = 3564 / 40e6;
     auto tstart = std::chrono::steady_clock::now();
-    for (unsigned int i = 1; i <= norbits; i += orbitmux) {
+    for (unsigned int i = firstOrbit, lastOrbit = firstOrbit + norbits; i < lastOrbit; i += orbitmux) {
       unsigned int nwords = src_.fillOrbit(i, orbit_buff, end_buff);
       bool first = true;
       uint64_t *ptr = orbit_buff;
@@ -170,7 +171,17 @@ public:
         ptr += (chunksize256 << 2);
         first = false;
       }
-      writev(fd, &iovecs.front(), 2 * ipacket);
+      int written = writev(fd, &iovecs.front(), 2 * ipacket);
+      if (written != int(((nwords + 3) / 4) + ipacket) * 32) {
+        printf(
+            "Mismatch in writing to stream, had %u words in %u packets, got %d bytes instead of %u. "
+            "Probably the receiver crashed.\n",
+            nwords,
+            ipacket,
+            written,
+            (((nwords + 3) / 4) + ipacket) * 32);
+        abort();
+      }
       if (sync_) {
         auto tend = std::chrono::steady_clock::now();
         double dt = (std::chrono::duration<double>(tend - tstart)).count();
@@ -193,6 +204,50 @@ public:
 private:
   unsigned int orbSize_;
   bool sync_;
+};
+
+class CMSSWGenerator : public GeneratorBase {
+public:
+  CMSSWGenerator(const ResamplerData &data,
+                 unsigned int tmux,
+                 unsigned int offs,
+                 unsigned int seed,
+                 unsigned int run,
+                 unsigned int lumisection,
+                 unsigned int orbitSize = 2 * 1024 * 1024)
+      : GeneratorBase(data, tmux, offs, seed), run_(run), lumisection_(lumisection), orbSize_(orbitSize) {}
+  void generate(int fd, unsigned int norbits, unsigned int firstOrbit, unsigned int orbitmux) override final {
+    uint64_t *orbit_buff = reinterpret_cast<uint64_t *>(std::aligned_alloc(4096u, orbSize_));
+    uint64_t *end_buff = orbit_buff + (orbSize_ / sizeof(uint64_t));
+    uint64_t total_size = 32;
+    // insert a dummy event payload first
+    uint8_t fileHeader[32];
+    std::fill(fileHeader, fileHeader + 32, 0);
+    std::copy_n("RAW_0002", 8, fileHeader);
+    *reinterpret_cast<uint16_t *>(&fileHeader[8]) = 32;
+    *reinterpret_cast<uint16_t *>(&fileHeader[10]) = 20;
+    *reinterpret_cast<uint32_t *>(&fileHeader[12]) = norbits;
+    *reinterpret_cast<uint32_t *>(&fileHeader[16]) = run_;
+    *reinterpret_cast<uint32_t *>(&fileHeader[20]) = lumisection_;
+    write(fd, fileHeader, 32);
+    uint32_t orbitHeader[6] = {6, run_, lumisection_, 0, 0, 0};
+    for (unsigned int orbitno = firstOrbit, lastOrbit = firstOrbit + norbits; orbitno < lastOrbit;
+         orbitno += orbitmux) {
+      unsigned int nwords = src_.fillOrbit(orbitno, orbit_buff, end_buff);
+      orbitHeader[3] = orbitno;
+      orbitHeader[4] = nwords << 3;
+      write(fd, orbitHeader, 24);
+      write(fd, orbit_buff, nwords << 3);
+      total_size += (nwords << 3) + 24;
+    }
+    lseek(fd, 24, SEEK_SET);
+    write(fd, &total_size, 8);
+    lseek(fd, 0, SEEK_END);
+    std::free(orbit_buff);
+  }
+
+private:
+  unsigned int run_, lumisection_, orbSize_;
 };
 
 int connect_tcp(const char *addr, const char *port, unsigned int port_offs = 0) {
@@ -221,6 +276,9 @@ int print_usage(const char *self, int retval) {
   printf("   -T, --tmux  T  : runs at TMUX T (default: 6)\n");
   printf("    --orbitmux N  : mux orbits by factor N (default: 1)\n");
   printf("   -t, --tslice T : runs tslice t  (default: 0)\n");
+  printf("   -r, --run   N : sets CMSSW run number\n");
+  printf("   -l, --ls    N : sets CMSSW lumisection number \n");
+  printf("   --orbitsPerLumi : sets number of orbits per lumisection (default: 1024) \n");
   printf("   -s, --seed   N : sets seed of RNG\n");
   printf("   -O  --orbsize  B : uses an orbit buffer size of B kB (default: 2048)\n");
   printf("   -S,  --sync     : try to emit orbits at the LHC rate \n");
@@ -232,6 +290,7 @@ int print_usage(const char *self, int retval) {
 void start_and_run(std::unique_ptr<GeneratorBase> &&generator,
                    const std::string &target,
                    unsigned int norbits,
+                   unsigned int firstOrbit,
                    unsigned int orbitmux,
                    int iclient,
                    std::atomic<unsigned int> *nclients,
@@ -247,7 +306,7 @@ void start_and_run(std::unique_ptr<GeneratorBase> &&generator,
     } else {
       filename = target.substr(0, pos) + std::to_string(iclient) + target.substr(pos + 2);
     }
-    fd = open(filename.c_str(), O_WRONLY | O_TRUNC | O_CREAT);
+    fd = open(filename.c_str(), O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
   } else {
     std::string ip = target.substr(0, pos), port = target.substr(pos + 1);
     fd = connect_tcp(ip.c_str(), port.c_str(), iclient);
@@ -264,7 +323,7 @@ void start_and_run(std::unique_ptr<GeneratorBase> &&generator,
     printf("Skipping generator %d, since there were errors in the setup\n", iclient);
   } else {
     auto tstart = std::chrono::steady_clock::now();
-    generator->generate(fd, norbits, orbitmux);
+    generator->generate(fd, norbits, firstOrbit, orbitmux);
     auto tend = std::chrono::steady_clock::now();
     auto dt = (std::chrono::duration<double>(tend - tstart)).count();
     double orbrate = norbits / orbitmux / dt, orbrate_lhc = 40e6 / 3564;
@@ -282,7 +341,7 @@ void start_and_run(std::unique_ptr<GeneratorBase> &&generator,
 
 int main(int argc, char **argv) {
   int tmux = 6, tmux_slice = 0, orbsize_kb = 2048, nclients = 1, seed = 37;
-  unsigned int orbits = 0, orbitmux = 1, seconds = 0;
+  unsigned int orbits = 0, orbitmux = 1, seconds = 0, run = 37, lumisection = 1, orbitsPerLumi = 1 << 10;
   bool sync = false;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
@@ -290,15 +349,18 @@ int main(int argc, char **argv) {
                                            {"orbitmux", required_argument, nullptr, 1},
                                            {"orbits", required_argument, nullptr, 2},
                                            {"time", required_argument, nullptr, 3},
+                                           {"orbitsPerLumi", required_argument, nullptr, 4},
                                            {"tslice", required_argument, nullptr, 't'},
                                            {"seed", required_argument, nullptr, 's'},
+                                           {"run", required_argument, nullptr, 'r'},
+                                           {"ls", required_argument, nullptr, 'l'},
                                            {"orbsize", required_argument, nullptr, 'O'},
                                            {"nclients", required_argument, nullptr, 'n'},
                                            {"sync", no_argument, nullptr, 'S'},
                                            {nullptr, 0, nullptr, 0}};
     /* getopt_long stores the option index here. */
     int option_index = 0;
-    int optc = getopt_long(argc, argv, "hd:T:t:O:n:S", long_options, &option_index);
+    int optc = getopt_long(argc, argv, "hd:T:t:O:n:Sr:l:s:", long_options, &option_index);
 
     /* Detect the end of the options. */
     if (optc == -1)
@@ -336,11 +398,20 @@ int main(int argc, char **argv) {
           return 1;
         }
       } break;
+      case 4:
+        orbitsPerLumi = std::atol(optarg);
+        break;
       case 'O':
         orbsize_kb = std::atoi(optarg);
         break;
       case 's':
         seed = std::atoi(optarg);
+        break;
+      case 'l':
+        lumisection = std::atoi(optarg);
+        break;
+      case 'r':
+        run = std::atoi(optarg);
         break;
       case 'S':
         sync = true;
@@ -373,6 +444,10 @@ int main(int argc, char **argv) {
   } else if (orbits == 0) {
     orbits = 10;
   }
+  unsigned int firstOrbit = 1;
+  if (lumisection > 1) {
+    firstOrbit += orbitsPerLumi * (lumisection - 1);
+  }
   int ret = 0;
   std::atomic<unsigned int> clients = nclients, client_errors = 0;
   std::vector<std::thread> client_threads;
@@ -383,12 +458,15 @@ int main(int argc, char **argv) {
     } else if (kind == "DTHBasic256") {
       checker.reset(
           new DTH256Generator(srcData, tmux, tmux_slice + client, seed + 37 * client, sync, orbsize_kb * 1024));
+    } else if (kind == "CMSSW") {
+      checker.reset(new CMSSWGenerator(
+          srcData, tmux, tmux_slice + client, seed + 37 * client, run, lumisection, orbsize_kb * 1024));
     } else {
       printf("Unsupported mode '%s'\n", kind.c_str());
       return 3;
     }
     client_threads.emplace_back(
-        start_and_run, std::move(checker), target, orbits, orbitmux, client, &clients, &client_errors);
+        start_and_run, std::move(checker), target, orbits, firstOrbit, orbitmux, client, &clients, &client_errors);
   }
   for (auto &t : client_threads)
     t.join();

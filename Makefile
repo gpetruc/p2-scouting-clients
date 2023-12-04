@@ -1,6 +1,6 @@
 CC = c++
 CCFLAGS = --std=c++17 -march=native -W -Wall  -Ofast -ggdb
-LIBS = -lstdc++ -lpthread
+LIBS = -lstdc++ -pthread
 .PHONY: clean format run_tests env104 envdev env9dev
 USE_ROOT ?= 1
 USE_APACHE ?= 1
@@ -9,12 +9,12 @@ TARGETS := data_checker.exe  data_generator.exe libunpackerBase.so
 SUBS :=
 
 ifeq ($(USE_ROOT), 1)
-	TARGETS += root/librootUnpacker.so
+	TARGETS += root/librootUnpacker.so root/rootUnpacker.exe
 	CCFLAGS += -DUSE_ROOT=1
 endif
 
 ifeq ($(USE_APACHE), 1)
-	TARGETS += apache/libapacheUnpacker.so
+	TARGETS += apache/libapacheUnpacker.so apache/apacheUnpacker.exe
 	CCFLAGS += -DUSE_APACHE=1
 endif
 
@@ -34,15 +34,15 @@ ifeq ($(USE_APACHE), 1)
 endif
 
 envdev:
-	@echo 'source /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt/setup.sh;'
-	@echo 'export TBB=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt;'
+	@echo 'source /cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-el8-gcc11-opt/setup.sh;'
+	@echo 'export TBB=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-el8-gcc11-opt;'
 	@echo 'export LD_LIBRARY_PATH=$$PWD:$${LD_LIBRARY_PATH};'
 ifeq ($(USE_ROOT), 1)
 	@echo 'export LD_LIBRARY_PATH=$$PWD/root:$${LD_LIBRARY_PATH};'
 endif
 ifeq ($(USE_APACHE), 1)
-	@echo 'export ARROW_INCLUDE=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt;'
-	@echo 'export ARROW_LIB=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-centos8-gcc11-opt/lib64;'
+	@echo 'export ARROW_INCLUDE=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-el8-gcc11-opt;'
+	@echo 'export ARROW_LIB=/cvmfs/sft.cern.ch/lcg/views/dev3cuda/latest/x86_64-el8-gcc11-opt/lib64;'
 	@echo 'export LD_LIBRARY_PATH=$$PWD/apache:$${LD_LIBRARY_PATH};'
 endif
 
@@ -61,29 +61,43 @@ endif
 
 root/librootUnpacker.so:
 	cd root && $(MAKE) librootUnpacker.so
+root/rootUnpacker.exe:
+	cd root && $(MAKE) rootUnpacker.exe
 
 apache/libapacheUnpacker.so:
 	cd apache && $(MAKE) libapacheUnpacker.so
+apache/apacheUnpacker.exe:
+	cd apache && $(MAKE) apacheUnpacker.exe
+
+unpack.o: unpack.cc unpack.h UnpackerBase.h
+	$(CC) -fPIC $(CCFLAGS) -fopt-info-vec-all -c $< -o $@
 
 UnpackerBase.o: UnpackerBase.cc unpack.h UnpackerBase.h
 	$(CC) -fPIC $(CCFLAGS) -c $< -o $@
 
-libunpackerBase.so: UnpackerBase.o
-	$(CC) -shared $(CCFLAGS) $(LIBS) $^ -o $@
+libunpackerBase.so: UnpackerBase.o unpack.o
+	$(CC) $(CCFLAGS) $^ -shared $(LIBS) -o $@
 
 %.exe : %.cc
-	$(CC) $(CCFLAGS) $(LIBS) $< -o $@
+	$(CC) $(CCFLAGS) $< $(LIBS) -o $@
 
 receive256tbb.exe : receive256tbb.cc
-	$(CC) $(CCFLAGS) $(LIBS) $< -o $@ -I$(TBB)/include -L$(TBB)/lib -ltbb
+	$(CC) $(CCFLAGS) $< $(LIBS) -o $@ -I$(TBB)/include -L$(TBB)/lib -ltbb
  
 format:
-	clang-format -i data_checker.cc data_generator.cc unpack.h UnpackerBase.h
+	clang-format -i data_checker.cc data_generator.cc unpack.h unpack.cc UnpackerBase.h UnpackerBase.cc
 	@cd apache && $(MAKE) format
 	@cd root && $(MAKE) format
 
 clean:
 	@rm *.exe *.data *.o *.so 2> /dev/null || true
+	@rm -r received_raw 2> /dev/null || true
+ifeq ($(USE_ROOT), 1)
+	@cd root && $(MAKE) clean > /dev/null
+endif
+ifeq ($(USE_APACHE), 1)
+	@cd apache && $(MAKE) clean > /dev/null
+endif
 
 run_tests: data_checker.exe data_generator.exe
 	@echo "Running basic file tests"
@@ -99,3 +113,17 @@ run_tests: data_checker.exe data_generator.exe
 	./data_generator.exe DTHBasic256 root/data/Puppi.dump dth256.data --orbits 100 && ./data_checker.exe DTHBasic256 dth256.data
 	bash -c "(sleep 1 && ./data_generator.exe DTHBasic256 root/data/Puppi.dump 127.0.0.1:9988 --orbits 1000 -n 2 --sync &)"
 	./data_checker.exe DTHBasic256 127.0.0.1:9988 -n 2
+	./data_generator.exe CMSSW root/data/Puppi.dump cmssw.data --orbits 100 && ./data_checker.exe CMSSW cmssw.data
+	rm -r received_raw 2> /dev/null || true
+	bash -c "(sleep 1 && ./data_generator.exe DTHBasic256 root/data/Puppi.dump 127.0.0.1:9988 --orbits 1000 -n 2 --sync &)"
+	./data_checker.exe DTHRollingReceive256 127.0.0.1:9988 received_raw --orbitBitsPerFile 9 -n 2
+	./data_checker.exe Native64SZ received_raw/run000000/run000000_ls0001_index000001_ts00.raw -t 0 
+	./data_checker.exe Native64SZ received_raw/run000000/run000000_ls0001_index000001_ts01.raw -t 1 
+	./data_checker.exe Native64SZ received_raw/run000000/run000000_ls0001_index000513_ts00.raw -t 0 
+	./data_checker.exe Native64SZ received_raw/run000000/run000000_ls0001_index000513_ts01.raw -t 1 
+	bash -c "(sleep 1 && ./data_generator.exe DTHBasic256 root/data/Puppi.dump 127.0.0.1:9988 --orbits 1000 --sync &)"
+	./data_checker.exe DTHRollingReceive256 127.0.0.1:9988 received_raw --orbitBitsPerFile 9 --cmssw  --r 37
+	./data_checker.exe CMSSW received_raw/run000037/run000037_ls0001_index000001_ts00.raw 
+	./data_checker.exe CMSSW received_raw/run000037/run000037_ls0001_index000513_ts00.raw 
+	rm -r received_raw 2> /dev/null || true
+

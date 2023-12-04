@@ -42,6 +42,32 @@ Two small example data files in **DTHBasic** and **DTHBasicOA** formats are avai
    | 55-24 |  32  | orbit number |
    | 23-00 |  24  | size in 64 bit words |
 
+ * **CMSSW**: Events are in *Native64* format as before, but there are additional per-file and per-orbit headers
+
+The *per-file header* is 32 bytes long, and should match the definitions in [FRDFileHeaderContent_v2](https://github.com/cms-sw/cmssw/blob/master/IOPool/Streamer/interface/FRDFileHeader.h)
+
+   | bytes  | size | meaning |
+   |-------|------|---------|
+   | 0-7 |   8  |   `"RAW_0002"` in ASCII (`0x52, 0x41, 0x57, 0x5f 0x30, 0x30, 0x30, 0x32`) | 
+   | 8-9 | 2 | Header size in bytes (should be `32`) |
+   | 10-11 | 2 | Event type (should be `20` ) |
+   | 12-15 | 4 | Number of "events" (orbits in our case) |
+   | 16-19 | 4 | Run number |
+   | 20-23 | 4 | Lumisection number |
+   | 24-31 | 8 | File size in bytes (including all headers) |
+
+The *per-orbit header"  is 24 bytes long, and should match the definitions in [FRDEventHeader_V6](https://github.com/cms-sw/cmssw/blob/master/IOPool/Streamer/interface/FRDEventMessage.h)
+
+   | bytes  | word32 | size | meaning |
+   |-------|--|----|---------|
+   | 0-1 | 0h |  2  |   Version (`06`) | 
+   | 2-3 | 0l | 2 | Flags (`00`) |
+   | 4-7 | 1 | 4 | Run number |
+   | 8-11 | 2 | 4 | Lumisection number |
+   | 12-15 | 3| 4 | "Event" number (orbit number in our case) |
+   | 16-19 | 4 | 4 | Payload size in bytes (__NOT__ including headers) |
+   | 20-23 |5 | 4 | CRC32C (not used) |
+ 
  ## Compiling the code
 
 The standalone code in this directory depends only on a recent gcc. However, the subdirectories `root` and `apache` depend on having root and apache arrow available. The easiest way to set up your environment is to use one of the LCG builds by doing
@@ -80,7 +106,7 @@ make && make run_tests
 *Modes* that receive and store some data are:
  * `DTHReceiveOA`: when used as `data_checker.exe DTHReceiveOA source output [--prescale N]` it will receive in `DTHBasicOA` format and saves a prescaled amount of orbits out in `Native128` format. It stops after collecting 4GB of data.
  * `DTHReceive256`: when used as `data_checker.exe DTHReceive256 source output [--prescale N]` it will receive in `DTHBasic256` format and saves a prescaled amount of orbits out in `Native64` format with up to 3 null 64-bit words at the end of each orbit (so, it can be read back with `Native64SZ`). It stops after collecting 4GB of data.
- * `DTHRollingReceive256`: when used as `data_checker.exe DTHRollingReceive256 source outputBasePath orbitsPerFile [--prescale N]` it will receive in `DTHBasic256` format and saves data out in `Native64` format with up to 3 null 64-bit words at the end of each orbit (so, it can be read back with `Native64SZ`), with a specified number of orbits per file. Outputs are saved as outputBasePath + `tsNN.orbNNNNNNNN.dump` where NN is the timeslice index (argument of option `-t`) and `NNNNNNNN` is the orbit number of the first orbit in the file. The file is first created with extension `.dump.tmp` and then renamed to `.dump` after it is closed.
+ * `DTHRollingReceive256`: when used as `data_checker.exe DTHRollingReceive256 source outputBasePath  [--prescale N]` it will receive in `DTHBasic256` format and saves data out in `Native64` format with up to 3 null 64-bit words at the end of each orbit (so, it can be read back with `Native64SZ`). Each file will contain by default 2^12 orbits (the exponent can be configured with `--orbitBitsPerFile N`, default 12). Outputs are saved as _outputBasePath_ + `/runNNNNNN/runNNNN_lsNNNN_indexNNNNNN_tsNN.dump` where _run_ is the run number (set with `--runNumber`, default 0), _ls_ is the lumisection number (1 + orbit/2^18, can be configured with `--orbitBitsPerLS`), _index_ contains the lower bits of the orbit number of the first orbit in the file, and `ts` is the timeslice index (argument of option `-t`). The file is first created with extension `.raw.tmp` and then renamed to `.raw` after it is closed.
 
 *Modes* for debugging are
  * `TrashData`: receive data via TCP/IP and discard it without any processing

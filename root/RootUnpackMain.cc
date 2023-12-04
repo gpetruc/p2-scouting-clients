@@ -19,6 +19,7 @@ void usage() {
   printf("  -z algo[,level] : enable compression\n");
   printf("                    algorithms supported are none, lzma, zlib, lz4, zstd;\n");
   printf("                    default level is 4\n");
+  printf("  --cmssw         : assume CMSSW file headers\n");
 }
 
 int main(int argc, char **argv) {
@@ -32,10 +33,12 @@ int main(int argc, char **argv) {
 
   std::string compressionMethod = "none";
   int compressionLevel = 0, threads = -1;
+  bool cmsswHeaders = false;
   while (1) {
     static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
                                            {"threads", required_argument, nullptr, 'j'},
                                            {"compression", required_argument, nullptr, 'z'},
+                                           {"cmssw", no_argument, nullptr, 1},
                                            {nullptr, 0, nullptr, 0}};
     int option_index = 0;
     int optc = getopt_long(argc, argv, "hj:z:", long_options, &option_index);
@@ -46,6 +49,9 @@ int main(int argc, char **argv) {
       case 'h':
         usage();
         return 0;
+      case 1:
+        cmsswHeaders = true;
+        break;
       case 'j':
         threads = std::atoi(optarg);
         break;
@@ -105,6 +111,8 @@ int main(int argc, char **argv) {
     ROOT::EnableThreadSafety();
     if (threads != -1)
       unpacker->setThreads(threads);
+    if (cmsswHeaders)
+      unpacker->setCMSSW(cmsswHeaders);
     auto report = unpacker->unpackFiles(ins, output);
     printReport(report);
   } catch (const std::exception &e) {
