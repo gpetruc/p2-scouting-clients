@@ -131,7 +131,7 @@ UnpackerBase::Report ArrowUnpackerBase::myUnpackFiles(const std::vector<std::str
     do {
       fin.read(reinterpret_cast<char *>(&header), sizeof(uint64_t));
     } while (header == 0 && fin.good());
-    if (!header)
+    if (!header || !fin.good())
       continue;
     parseHeader(header, run, bx, orbit, good, nwords);
     fillBase(run, orbit, bx, good);
