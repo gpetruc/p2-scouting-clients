@@ -13,7 +13,7 @@ This repository contains software clients to receive and process Phase-2 L1 Data
    |-------|------|---------|
    | 63-62 |   2  |  `10` = valid event header |
    | 61    |   1  | error bit |
-   | 60-56 |   6  | (local) run number |
+   | 60-56 |   5  | (local) run number |
    | 55-24 |  32  | orbit number |
    | 23-12 |  12  | bunch crossing number (0-3563) |
    | 11-07 |   4  | must be set to `0` |
