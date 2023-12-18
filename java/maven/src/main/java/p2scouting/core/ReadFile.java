@@ -19,8 +19,8 @@ class ReadFile {
             var buff = ByteBuffer.allocate(8 * 256); // LongBuffer.wrap(data);
             System.out.println("Our byte order is "
                     + (ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN ? "big" : "little") + "-endian.\n");
-            hbuff.order(ByteOrder.nativeOrder());
-            buff.order(ByteOrder.nativeOrder());
+            hbuff.order(ByteOrder.LITTLE_ENDIAN);
+            buff.order(ByteOrder.LITTLE_ENDIAN);
             while (fc.isOpen()) {
                 int nb = fc.read(hbuff); // read header
                 if (nb == -1)
@@ -33,11 +33,11 @@ class ReadFile {
                 hbuff.clear();
                 if (h == 0)
                     continue;
-                int npuppi = (int)(h & 0xFF);
-                long orbit = ((h>>>24) & 0xFFFF_FFFF);
-                if (orbit != lastorbit) {
+                ScoutingEventHeaderRecord eh = ScoutingEventHeaderRecord.decode(h);
+                int npuppi = eh.nwords();
+                if (eh.orbit() != lastorbit) {
                     orbits++;
-                    lastorbit = orbit;
+                    lastorbit = eh.orbit();
                 }
                 events++;
                 candidates += npuppi;

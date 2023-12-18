@@ -1,6 +1,7 @@
 package p2scouting.kafka;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,6 +18,7 @@ public class PuppiEventSplitterKernel
     @Override
     public Iterable<KeyValue<Long, ByteBuffer>> apply(Long key, ByteBuffer value) {
         System.err.println("Asked to split key " + key +", a byte buffer of length "+value.limit());
+        value.order(ByteOrder.LITTLE_ENDIAN);
         List<KeyValue<Long, ByteBuffer>> result = new ArrayList<>();
         for (int offs = 0, tail = value.limit(); offs < tail; ) {
             long header = value.getLong(offs);
