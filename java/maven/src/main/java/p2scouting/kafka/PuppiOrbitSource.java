@@ -1,6 +1,7 @@
 package p2scouting.kafka;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Properties;
 import java.util.Random;
 
@@ -20,12 +21,12 @@ public class PuppiOrbitSource {
       var bindex = 0;
       for (int bx = offset; bx < 3564; bx += tmux) {
          int npuppi = (int) Math.min(30*Math.exp(1.3*rng.nextGaussian()), 207);
-         long header = ((long)npuppi) | (((long)bx) << 12 ) | (((long)orbit) << 24) | (0x01l << 62);
+         long header = ((long)npuppi) | (((long)bx) << 12) | (((long)orbit) << 24) | (2l << 62);
          blong.put(bindex, header);
          var rnddata = rng.longs(npuppi).toArray();
          blong.put(bindex+1, rnddata);
          bindex += 1+npuppi;
-         if (bx < 25) System.out.printf("Orbit %d, bx %d, npuppi %d\n", orbit, bx, npuppi);
+         if (bx < 25) System.out.printf("Orbit %d, bx %d, header %016x, npuppi %d\n", orbit, bx, header, npuppi);
       }
       System.out.println("Generated one orbit with "+bindex+" words");
       buffer.flip();
@@ -59,7 +60,7 @@ public class PuppiOrbitSource {
       Producer<Long, ByteBuffer> producer = new KafkaProducer<Long, ByteBuffer>(props);
 
       for (int i = 0; i < 10; i++) {
-         ByteBuffer buffer = ByteBuffer.allocate(4*1024*1024);
+         ByteBuffer buffer = ByteBuffer.allocate(4*1024*1024).order(ByteOrder.LITTLE_ENDIAN);
          int orbit = 100+i+1;
          generateOrbit(orbit, 6, offset, buffer, rng);
          var record = new ProducerRecord<>(topicName, (long)orbit, buffer);
