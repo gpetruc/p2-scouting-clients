@@ -15,6 +15,13 @@ public class PuppiEventUnpackerKernel implements KeyValueMapper<Long, ByteBuffer
     @Override
     public KeyValue<ScoutingEventHeaderRecord, PuppiSOAFloatRecord> apply(Long key, ByteBuffer value) {
        LongBuffer buff = value.order(ByteOrder.LITTLE_ENDIAN).asLongBuffer();
-       return new KeyValue<>(ScoutingEventHeaderRecord.decode(key), PuppiUnpacker.unpackMany(buff));
+       long header = buff.get(0);
+       assert((header >>> 12) == key);
+       var eh = ScoutingEventHeaderRecord.decode(key << 12);
+       var puppis = PuppiUnpacker.unpackMany(buff.slice(1,buff.limit()-1));
+       if (eh.bx() < 25) {
+         System.out.printf("Unpacking %013x run %d, orbit %d, bx %d, npuppi %d\n", key, eh.run(), eh.orbit(), eh.bx(), puppis.n());
+       }
+       return new KeyValue<>(eh, puppis);
     }
 }

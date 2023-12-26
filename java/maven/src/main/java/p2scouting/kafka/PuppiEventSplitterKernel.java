@@ -8,6 +8,8 @@ import java.util.List;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.kstream.KeyValueMapper;
 
+import p2scouting.core.ScoutingEventHeaderRecord;
+
 /**
  * In this example, we implement a simple Kafka stream kernel that splits orbits into events
  */
@@ -26,10 +28,14 @@ public class PuppiEventSplitterKernel
                 offs += 8;
                 continue;
             }
-            long evkey = header >> 12;
-            int npuppi = (int)(header & 0xFFF);
+            long evkey = header >>> 12;
+            ScoutingEventHeaderRecord eh = ScoutingEventHeaderRecord.decode(header);
+            int npuppi = eh.nwords();
             int length = 8*(npuppi+1);
-            var evdata = value.slice(offs, length);
+            var evdata = value.slice(offs, length).order(ByteOrder.LITTLE_ENDIAN);
+            if (eh.bx() < 25) {
+                System.out.printf("Splitting: event %016x with %d puppis\n", header, npuppi);
+            }
             result.add(new KeyValue<>(evkey, evdata));
             offs += length;
         }

@@ -10,7 +10,7 @@ public class ScoutingEventHeaderSerializer implements Serializer<ScoutingEventHe
 
     @Override
     public byte[] serialize(String topic, ScoutingEventHeaderRecord data) {
-        byte[] ret = new byte[4];
+        byte[] ret = new byte[8];
         ByteBuffer buff = ByteBuffer.wrap(ret);
         buff.putLong(data.encode());
         return ret;
