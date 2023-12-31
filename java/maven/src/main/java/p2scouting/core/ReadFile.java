@@ -8,11 +8,31 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 
 class ReadFile {
+    public static void usage(String err) {
+        System.out.println("Usage: ReadFile [-u] file. " + err);
+        System.exit(1);
+    }
+
     public static void main(String[] args) {
         long orbits = 0, lastorbit = 0, events = 0, candidates = 0, bytes = 0;
         double sumpt = 0;
+        var t0 = System.nanoTime();
+        boolean unpack = false;
         try {
-            var path = Path.of(args[0]);
+            Path path = null;
+            for (int i = 0; i < args.length; ++i) {
+                if (args[i].equals("-u") || args[i].equals("--unpack")) {
+                    unpack = true;
+                } else {
+                    if (path != null)
+                        usage("Duplicate argument '" + args[i] + "'");
+                    path = Path.of(args[i]);
+                }
+            }
+            if (path == null) {
+                usage("Missing argument");
+                return;
+            }
             System.out.println("Opening " + path + ": exists? " + path.toFile().exists());
             var fc = FileChannel.open(path, StandardOpenOption.READ);
             var hbuff = ByteBuffer.allocate(8); // LongBuffer.wrap(header);
@@ -41,21 +61,36 @@ class ReadFile {
                 }
                 events++;
                 candidates += npuppi;
-                bytes += (npuppi+1)*8;
+                bytes += (npuppi + 1) * 8;
                 if (npuppi > 0) {
                     buff.limit(8 * npuppi);
                     nb = fc.read(buff);
                     if (nb != 8 * npuppi)
                         throw new IOException("Got only " + nb + " bytes for the payload instead of " + (8 * npuppi));
                     buff.flip();
-                    var puppis = PuppiUnpacker.unpackMany(buff.asLongBuffer());
-                    for (float p : puppis.pt()) sumpt += p;
+                    if (unpack) {
+                        var puppis = PuppiUnpacker.unpackMany(buff.asLongBuffer());
+                        for (float p : puppis.pt())
+                            sumpt += p;
+                    }
                     buff.clear();
                 }
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
-        System.out.printf("Read %d orbits, %d events, %d candidates, %d bytes, sumpt %.1f\n", orbits, events, candidates, bytes, sumpt);
+        var t1 = System.nanoTime();
+        var time = (1e-9 * (t1 - t0));
+        double inrate = bytes / (1024. * 1024.) / time;
+        System.out.printf(
+                "Done in %.2fs. Processed %d orbits, %d events, %d candidates, Event rate: %.1f kHz (40 MHz / %.1f), input data rate %.1f MB/s (%.1f Gbps)\n",
+                time,
+                orbits, events, candidates,
+                events / time / 1000.,
+                (40e6 * time / events),
+                inrate,
+                inrate * 8 / 1024.);
+        if (unpack)
+            System.out.printf("Sumpt %.1f\n", sumpt);
     }
 }

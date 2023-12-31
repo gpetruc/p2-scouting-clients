@@ -20,7 +20,7 @@ public class SparkDemo {
     Dataset<Row> unpackedData = rowData.map(unpacker, unpacker.encoder());
     unpackedData.printSchema();
     unpackedData.show();    
-    // Count events, orbits, puppi candidates, compue sum pt
+    // Count events, orbits, puppi candidates, compute sum pt
     long norbits = unpackedData.select("orbit").count(); 
     long nevents = unpackedData.select("orbit").distinct().count(); 
     Dataset<Row> pts = unpackedData.select("puppis.pt");
