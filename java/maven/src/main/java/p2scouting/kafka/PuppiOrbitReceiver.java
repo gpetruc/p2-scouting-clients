@@ -38,7 +38,7 @@ public class PuppiOrbitReceiver {
         int maxEmpty = 10;
         String server = "localhost:9092";
         boolean split = false;
-        int dumpbx = 0;
+        int dumpbx = -1;
         int orbits = 0, lastorbit = -1;
         long messages = 0, bytes = 0, events = 0, candidates = 0;
         long t0 = -1, t1 = -1;
@@ -103,11 +103,12 @@ public class PuppiOrbitReceiver {
                 long key = record.key();
                 if (key != lastorbit) {
                     orbits++;
+                    lastorbit = (int) key;
                 }
                 messages++;
                 bytes += record.value().limit();
                 if (dumpbx >= 0)
-                    System.out.printf("offset = %d, key = %s, value = %s\n",
+                    System.out.printf("offset = %d, key = %s, bytes = %s\n",
                             record.offset(), record.key(), record.value().limit());
                 if (split) {
                     try {
@@ -137,7 +138,7 @@ public class PuppiOrbitReceiver {
         double inrate = bytes / (1024. * 1024.) / time;
         if (!split) {
             System.out.printf(
-                    "Done in %.2fs. Processed %d messages (rate: %.1f kHz), %d orbits (rate: %.1f kHz, i.e. TM %.1f), input data rate %.1f MB/s (%.1f Gbps)\n",
+                    "Done in %.2fs. Processed %d messages (rate: %.2f kHz), %d orbits (rate: %.2f kHz, i.e. TM %.1f), input data rate %.1f MB/s (%.1f Gbps)\n",
                     time,
                     messages,
                     messages / time / 1000.,
@@ -148,7 +149,7 @@ public class PuppiOrbitReceiver {
                     inrate * 8 / 1024.);
         } else {
             System.out.printf(
-                    "Done in %.2fs. Processed %d messages (rate: %.1f kHz), %d orbits (rate: %.1f kHz, i.e. TM %.1f), %d events, %d candidates\nEvent rate: %.1f kHz (40 MHz / %.1f), input data rate %.1f MB/s (%.1f Gbps)\n",
+                    "Done in %.2fs. Processed %d messages (rate: %.2f kHz), %d orbits (rate: %.2f kHz, i.e. TM %.1f), %d events, %d candidates\nEvent rate: %.1f kHz (40 MHz / %.1f), input data rate %.1f MB/s (%.1f Gbps)\n",
                     time,
                     messages,
                     messages / time / 1000.,

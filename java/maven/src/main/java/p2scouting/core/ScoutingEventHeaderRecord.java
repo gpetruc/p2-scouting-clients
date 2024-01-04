@@ -16,7 +16,7 @@ public record ScoutingEventHeaderRecord(short run, int orbit, short bx, boolean 
     public final static long TYPE_EH = 0b01;
     public final static int MASK_NWORDS = (1 << BITS_NWORDS) - 1;
     public final static int MASK_BX = (1 << BITS_BX) - 1;
-    public final static int MASK_ORBIT = (1 << BITS_ORBIT) - 1;
+    public final static int MASK_ORBIT = (int)((1l << BITS_ORBIT) - 1);
     public final static int MASK_RUN = (1 << BITS_RUN) - 1;
     public final static long FULL_MASK_ERR = 1 << OFFS_ERR;
 
@@ -30,9 +30,9 @@ public record ScoutingEventHeaderRecord(short run, int orbit, short bx, boolean 
     }
 
     public static ScoutingEventHeaderRecord decode(long header) {
-        short run = (short) ((header >> OFFS_RUN) & MASK_RUN);
+        short run = (short) ((header >>> OFFS_RUN) & MASK_RUN);
         int orbit = (int) ((header >>> OFFS_ORBIT) & MASK_ORBIT);
-        short bx = (short) ((header >> OFFS_BX) & MASK_BX);
+        short bx = (short) ((header >>> OFFS_BX) & MASK_BX);
         boolean good = (header & FULL_MASK_ERR) == 0l;
         short nwords = (short)(header & MASK_NWORDS);;
         return new ScoutingEventHeaderRecord(run, orbit, bx, good, nwords);
