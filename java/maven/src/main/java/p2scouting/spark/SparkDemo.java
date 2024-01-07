@@ -7,9 +7,9 @@ import org.apache.spark.sql.Dataset;
 
 public class SparkDemo {
   public static void main(String[] args) {
-    String inFile = "/afs/cern.ch/work/g/gpetrucc/vivado/correlator-layer2/deregionizer_scouting/clients/native64.data";
+    String inFile = args[0];
     SparkSession spark = SparkSession.builder().appName("Simple Application").getOrCreate();
-    Dataset<Row> fileData = spark.read().format("binaryFile").load(inFile);
+    Dataset<Row> fileData = spark.read().format("binaryFile").load(inFile).cache();
     fileData.printSchema();
     fileData.show();
     RawFileSplitter splitter = new RawFileSplitter();
@@ -17,7 +17,7 @@ public class SparkDemo {
     rowData.printSchema();
     rowData.show();
     EventUnpacker unpacker = new EventUnpacker();
-    Dataset<Row> unpackedData = rowData.map(unpacker, unpacker.encoder());
+    Dataset<Row> unpackedData = rowData.map(unpacker, unpacker.encoder()).cache();
     unpackedData.printSchema();
     unpackedData.show();    
     // Count events, orbits, puppi candidates, compute sum pt
@@ -28,7 +28,12 @@ public class SparkDemo {
     Row summary = flatPts.agg(functions.count("pts").as("items"), functions.sum("pts").as("sumpt")).head();
     long puppis = summary.getAs("items");
     double sumpt = summary.getAs("sumpt");
-    System.out.printf("Processed %d orbits, %d events, %d candidates, sumpt %.1f\n", norbits, nevents, puppis, sumpt);
+    Dataset<Row> selectedData = unpackedData.filter(new SimpleSelection(15,10,7)).cache();
+    long selectedEvents = selectedData.count();
+    selectedData.write().json("selected.json");
+    selectedData.write().parquet("selected.parquet");
+    System.out.printf("Processed %d orbits, %d events, %d candidates, sumpt %.1f. Selected %d events.\n", norbits, nevents, puppis, sumpt, selectedEvents);
+
     spark.stop();
   }
 }

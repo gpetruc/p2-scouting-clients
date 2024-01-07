@@ -73,44 +73,6 @@ public class RawFileSplitter implements FlatMapFunction<Row, Row> {
         ByteBuffer rawbuff = ByteBuffer.wrap(data).order(ByteOrder.nativeOrder());
         LongBuffer buff = rawbuff.asLongBuffer();
         return new UnpackingIterator(buff);
-        /*
-        List<Row> result = new ArrayList<>();
-        while (buff.hasRemaining()) {
-            long header = buff.get();
-            if (header == 0) {
-                continue;
-            }
-            int npuppi = (int) (header & 0xFFF);
-            long[] evdata = new long[npuppi];
-            buff.get(evdata);
-            if (result.size() < 25 && npuppi > 0) {
-                System.out.printf("Header %016x, npuppi %d, array (%016x, ..)\n", header, npuppi, evdata[0]);
-            }
-            result.add(RowFactory.create(header, evdata));
-        }
-        */
-        /*
-         * for (int offs = 0, tail = buff.limit(); offs < tail;) {
-         * long header = buff.getLong(offs);
-         * offs += 8;
-         * if (header == 0) {
-         * continue;
-         * }
-         * int npuppi = (int) (header & 0xFFF);
-         * long[] evdata = new long[npuppi];
-         * LongBuffer lb = buff.slice(offs,
-         * 8*npuppi).order(ByteOrder.nativeOrder()).asLongBuffer();
-         * lb.get(evdata);
-         * if (offs < 250 && npuppi > 0) {
-         * System.out.
-         * printf("Header %016x, npuppi %d, buff (%016x, ..), array (%016x, ..)\n",
-         * header, npuppi, lb.get(0), evdata[0]);
-         * }
-         * result.add(RowFactory.create(header, evdata));
-         * offs += 8*npuppi;
-         * }
-         */
-        //return result.iterator();
     }
 
 }
