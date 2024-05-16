@@ -81,7 +81,8 @@ public:
   };
   struct DTH_Header256 {
     uint8_t size256;
-    bool ok, start, end;
+    uint32_t orbit;
+    bool ok, start, end, err;
   };
 
   DTH_Header readDTH(int sockfd, uint8_t out[16], bool checkStart = false, bool checkEnd = false) {
@@ -132,16 +133,29 @@ public:
       return ret;
     ret.start = test_bit<47>(out);
     ret.end = test_bit<46>(out);
+    ret.err = test_bit<45>(out);
     ret.size256 = out[48 / 8];
+    uint64_t payload64 = *reinterpret_cast<const uint64_t *>(&out[16]);
+    ret.orbit = (payload64 >> 24) & 0xFFFFFFFFlu;
     if (events_ < ndebug_) {
-      printf("DTH header: start %d, end %d, length256 %u: ", int(ret.start), int(ret.end), unsigned(ret.size256));
+      printf("DTH header: start %d, end %d, err %d, length256 %u, payload64 %016lx: ", int(ret.start), int(ret.end), int(ret.err), unsigned(ret.size256), payload64);
       print256(out);
       printf("\n");
     }
+    #if 1 // GP put back after fixing firmware 
+    if (ret.err && !ret.end) {
+      printf("WARN: DTH header: start %d, end %d, err %d, length256 %u: ", int(ret.start), int(ret.end), int(ret.err), unsigned(ret.size256));
+      print256(out);
+      printf("\n");
+    }
+    #else
+    ret.err = ret.err && ret.end;
+    #endif
     if (!(out[0] == 0x47 && out[1] == 0x5a)) {
-      printf("Bad DTH256 header, missing magic: start %d, end %d, length256 %u:",
+      printf("Bad DTH256 header, missing magic: start %d, end %d, err %d, length256 %u:",
              int(ret.start),
              int(ret.end),
+             int(ret.err), 
              unsigned(ret.size256));
       print256(out);
       printf("\n");
@@ -822,16 +836,15 @@ public:
         }
         ptr = orbit_buff;
         end = ptr + (totlen256 << 5);
-        if (totlen256 <= 1) {  // truncated orbit
-          PuppiOrbitHeader oh = readPuppiOrbitHeader(ptr, end, buff64);
-          uint32_t orbitno = oh.orbit;
+        if (dthh.err) {  // truncated orbit
+          //printf("Truncated orbit. Totlen256 %u, DTHH start %d, end %d, err %d, len %u, orbit %u\n", totlen256, int(dthh.start), int(dthh.end), int(dthh.err), unsigned(dthh.size256), dthh.orbit);
+          uint32_t orbitno = dthh.orbit;
           if (!(oldorbit_ == std::numeric_limits<unsigned int>::max() || orbitno == oldorbit_ + orbitMux_)) {
-            printf("%02u: Orbit number mismatch, found %u after %u (orbit header %016lx, err %d)\n",
+            printf("%02u: Orbit number mismatch (truncation), found %u after %u, len %u\n",
                    id_,
                    orbitno,
                    oldorbit_,
-                   buff64,
-                   oh.err);
+                   totlen256);
             orbitno = oldorbit_ + orbitMux_;
           }
           assert(oldorbit_ == std::numeric_limits<unsigned int>::max() || orbitno == oldorbit_ + orbitMux_);
@@ -951,24 +964,11 @@ public:
         orbits_++;
         ptr = orbit_buff;
         end = ptr + (totlen256 << 5);
-        PuppiOrbitHeader oh;
-        if (totlen256 <= 1) {
+        if (dthh.err) {
           truncorbits_++;
-          if (totlen256 == 1) {
-            oh = readPuppiOrbitHeader(ptr, end, buff64);
-          } else {
-            oh.length = 0;
-            oh.orbit = 0;
-            oh.err = true;
-          }
-        } else {
-          PuppiHeader evh = readPuppiHeader(ptr, end, buff64);
-          oh.length = totlen256 << 5;
-          oh.orbit = evh.orbit;
-          oh.err = false;
         }
         readBytes += totlen256 << 5;
-        if (orbits_ % prescale_ == 0) {
+        if (orbits_ % prescale_ == 0 && !dthh.err) {
           fout_.write(reinterpret_cast<char *>(orbit_buff), totlen256 << 5);
           wroteBytes += totlen256 << 5;
         }
@@ -1149,29 +1149,17 @@ public:
         orbits_++;
         ptr = orbit_buff;
         end = ptr + (totlen256 << 5);
-        PuppiOrbitHeader oh;
-        if (totlen256 <= 1) {
+        uint32_t orbit = dthh.orbit;
+        if (dthh.err) {
           truncorbits_++;
-          if (totlen256 == 1) {
-            oh = readPuppiOrbitHeader(ptr, end, buff64);
-          } else {
-            oh.length = 0;
-            oh.orbit = 0;
-            oh.err = true;
-          }
-        } else {
-          PuppiHeader evh = readPuppiHeader(ptr, end, buff64);
-          oh.length = totlen256 << 5;
-          oh.orbit = evh.orbit;
-          oh.err = false;
         }
         readBytes += totlen256 << 5;
-        lumisectionNumber_ = (oh.orbit >> orbitBitsPerLS_) + 1;
-        if (!fout_.is_open() || ((oh.orbit & orbitMaskPerFile_) == orbitMux_))
-          newFile(oh.orbit);
-        if (prescale_ != 0 && (prescale_ == 1 || oh.orbit % prescale_ == orbitMux_)) {
+        lumisectionNumber_ = (orbit >> orbitBitsPerLS_) + 1;
+        if (!fout_.is_open() || ((orbit & orbitMaskPerFile_) == orbitMux_))
+          newFile(orbit);
+        if (prescale_ != 0 && (prescale_ == 1 || orbit % prescale_ == orbitMux_) && !dthh.err) {
           if (addCMSSWHeaders_) {
-            uint32_t orbitHeader[6] = {6, runNumber_, lumisectionNumber_, oh.orbit, totlen256 << 5, 0};
+            uint32_t orbitHeader[6] = {6, runNumber_, lumisectionNumber_, orbit, totlen256 << 5, 0};
             fout_.write(reinterpret_cast<const char *>(orbitHeader), 6 * sizeof(uint32_t));
             bytesThisFile_ += 24 + (totlen256 << 5);
             orbitsThisFile_++;
@@ -1550,6 +1538,7 @@ void start_and_run(std::unique_ptr<CheckerBase> &&checker,
         _exit(1);
     }
     checker->clear();
+    close(sourcefd);
   } while (keep_running);
   printf("Done in client %d\n", client);
 }

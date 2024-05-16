@@ -12,7 +12,7 @@ inline void parseHeader(const uint64_t &header, uint16_t &run, uint16_t &bx, uin
   npuppi = header & 0xFFF;
   bx = (header >> 12) & 0xFFF;
   orbit = (header >> 24) & 0X3FFFFFFF;
-  run = (header >> 54);
+  run = (header >> 56) & 0x1F;
   good = !(header & (1llu << 61));
 }
 inline void readheader(

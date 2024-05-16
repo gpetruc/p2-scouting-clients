@@ -66,7 +66,7 @@ UnpackerBase::Report UnpackerBase::unpackFiles(const std::vector<std::string> &i
       do {
         fin.read(reinterpret_cast<char *>(&header), sizeof(uint64_t));
       } while (header == 0 && fin.good());
-      if (!header)
+      if (!header || !fin.good())
         continue;
       parseHeader(header, run, bx, orbit, good, nwords);
       if (nwords)
@@ -100,7 +100,7 @@ UnpackerBase::Report UnpackerBase::unpackFiles(const std::vector<std::string> &i
           fin.read(reinterpret_cast<char *>(&header), sizeof(uint64_t));
           sizes[ifile]--;
         } while (header == 0 && fin.good() && sizes[ifile] > 0);
-        if (!header)
+        if (!header || !fin.good())
           continue;
         parseHeader(header, run, bx, orbit, good, nwords);
         if (orbit != cmsswOrbit)
